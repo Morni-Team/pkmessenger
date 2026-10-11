@@ -55,11 +55,13 @@
   function connectAny() {
     if (!p2pMode) return relayMode ? connectRelay() : Promise.resolve();
     msg.textContent = 'Suche den anderen PC …';
+    diag('Suche den PC über die öffentlichen Vermittler …');
     var relays = null; // #148: Diagnose – erreichbare Vermittler
     return window.PKP2P.connect({
       key: key,
       timeoutMs: 20000,
       onState: function (s) {
+        if (s !== 'suche') diag('Zustand: ' + s);
         if (s === 'verbinde') msg.textContent = 'PC gefunden – verbinde direkt …';
         if (s === 'vermittler') msg.textContent = 'Direkt geht nicht (VPN/Netz) – nutze die Vermittler …';
         if (/^relays:\d+$/.test(s)) {
@@ -70,6 +72,7 @@
     })
       .then(function (c) {
         direct = c;
+        diag(c.mode === 'vermittler' ? 'Verbunden über die Vermittler ✓' : 'Direkt verbunden ✓');
         c.onClose(function () { $('note').textContent = 'Verbindung getrennt.'; });
         // #148: kein Direktweg (VPN, strenges Netz) → über die Vermittler, etwas langsamer
         $('via').textContent = c.mode === 'vermittler' ? '🔒 Über öffentliche Vermittler verbunden (verschlüsselt, etwas langsamer).' : '🔒 Direkt verbunden – ohne Server dazwischen.';
@@ -77,10 +80,12 @@
       .catch(function (e) {
         if (!relayMode) throw new Error((e && e.message) || 'Keine Verbindung möglich. Ist am anderen PC „Hilfe starten“ noch aktiv? Sonst: gleiches WLAN nutzen.');
         var why = (e && e.message) || 'Direktverbindung nicht möglich.';
+        diag('Direkt/Vermittler gescheitert: ' + why + ' → versuche Ersatz-Server');
         msg.textContent = why + ' Versuche den Server …';
         return connectRelay()
-          .then(function () { $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; })
-          .catch(function () {
+          .then(function () { diag('Über den Ersatz-Server verbunden ✓'); $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; })
+          .catch(function (e2) {
+            diag('Ersatz-Server gescheitert: ' + ((e2 && e2.message) || '?'));
             // #148: beide Wege gescheitert → den eigentlichen Grund zeigen, nicht nur „Server nicht erreichbar“
             throw new Error(why + (relays === 0 ? ' (Kein Vermittler erreichbar – VPN/Firewall/Werbeblocker prüfen.)' : '') + ' Der Ersatz-Server ist auch nicht erreichbar.');
           });
@@ -103,6 +108,22 @@
   function show(el, on) { el.classList.toggle('hidden', !on); }
   var msg = $('msg');
 
+  // #148: Verbindungs-Verlauf – jeder Schritt mit Uhrzeit, zum Kopieren für die Fehlersuche (keine Schlüssel, keine Codes)
+  var diagLines = [];
+  function diag(text) {
+    var t = new Date();
+    var hh = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    diagLines.push(hh + '  ' + text);
+    var box = $('diaglog');
+    if (box) box.textContent = diagLines.join('\n');
+  }
+  diag('Seite geladen · ' + (navigator.userAgent.match(/(Firefox|Edg|OPR|Chrome|Safari)\/[\d.]+/) || ['Browser ?'])[0] + ' · WebRTC: ' + (typeof RTCPeerConnection === 'function' ? 'ja' : 'NEIN (abgeschaltet?)') + ' · Modus: ' + (p2pMode ? 'direkt' : relayMode ? 'Server' : 'WLAN') + (relayHost ? ' · Ersatz-Server: ' + relayHost : ''));
+  if (frag.get('p') === '1' && !p2pMode) diag('⚠ Direktverbindungs-Skript (p2p.js) nicht geladen – Werbeblocker?');
+  if ($('diagcopy')) $('diagcopy').onclick = function () {
+    var text = 'PKMessenger Helfer-Verlauf\n' + diagLines.join('\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { $('diagcopy').textContent = 'Kopiert ✓'; });
+  };
+
   $('go').onclick = function () {
     if (!key) { msg.textContent = 'Ungültiger Link. Bitte den Link neu öffnen.'; return; }
     var code = ($('code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -115,11 +136,12 @@
       return send('/pair', { code: code, n: sealed.n, c: sealed.c });
     }).then(function (res) {
       var out = unseal(res);
-      if (!out || out.error) { msg.textContent = (out && out.error) || (res && res.error) || 'Verbindung fehlgeschlagen.'; return; }
+      if (!out || out.error) { msg.textContent = (out && out.error) || (res && res.error) || 'Verbindung fehlgeschlagen.'; diag('Kopplung: ' + msg.textContent); return; }
+      diag('Kopplung bestätigt ✓');
       show($('connect'), false);
       show($('live'), true);
       loop();
-    }).catch(function (e) { msg.textContent = e.message || 'Verbindung fehlgeschlagen.'; });
+    }).catch(function (e) { msg.textContent = e.message || 'Verbindung fehlgeschlagen.'; diag('Fehler: ' + msg.textContent); if ($('diag')) $('diag').open = true; });
   };
 
   function call(path, payload) {
