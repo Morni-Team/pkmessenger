@@ -5017,3 +5017,15 @@ body.help-active .chat {
   flex: 1 1 160px;
   min-width: 0;
 }
+
+/* ---------- KI-Server-Verwaltung: Gefahren-Schalter (#131) ---------- */
+.ai-danger {
+  border-color: color-mix(in srgb, var(--danger, #f87171) 45%, var(--line));
+}
+.ai-danger__confirm {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger, #f87171) 50%, var(--line));
+  background: color-mix(in srgb, var(--danger, #f87171) 8%, var(--panel-2));
+}
