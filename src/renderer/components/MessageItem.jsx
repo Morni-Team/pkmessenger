@@ -8,7 +8,7 @@ import { systemInfo } from '../../shared/system-messages';
 import MediaGate from './MediaGate.jsx';
 import { openProfile } from './ProfileCard.jsx';
 import { prefs } from '../prefs';
-import { checkMessageLinks } from '../../shared/link-safety';
+import { checkLink, checkMessageLinks } from '../../shared/link-safety';
 import { getLists } from '../linkLists';
 import { attachmentKind } from '../../shared/media';
 

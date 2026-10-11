@@ -27,6 +27,27 @@ Updaten: `cd relay && docker compose build --pull && docker compose up -d`. Logs
 
 > Der Build-Kontext ist das Repo-Wurzelverzeichnis (die `docker-compose.yml` setzt das automatisch), weil der Relay die Helfer-Oberfläche aus `src/help-web` mit ausliefert.
 
+### Server hat schon einen Caddy (z. B. NetBird) – #138
+
+Läuft auf dem Server bereits ein Caddy (oder ein anderer Reverse-Proxy) auf 80/443, kann der Caddy aus der `docker-compose.yml` nicht starten. **Typisches Zeichen:** Die App meldet „Problem mit dem HTTPS-Zertifikat“, `curl https://relay.deine-domain.de` bricht mit *TLS alert internal error* ab – der vorhandene Caddy kennt die Relay-Domain nicht und hat kein Zertifikat dafür.
+
+So geht's:
+
+1. Nur den Relay-Container starten und ihn **lokal** auf Port 8787 freigeben:
+   ```bash
+   cd relay
+   docker compose build
+   docker run -d --name pk-relay --restart unless-stopped -p 127.0.0.1:8787:8787 -e HOST=0.0.0.0 -e PORT=8787 pkmessenger-relay
+   ```
+2. Im **vorhandenen** Caddyfile einen Block ergänzen und Caddy neu laden (`caddy reload` bzw. `docker exec <caddy> caddy reload --config /etc/caddy/Caddyfile`):
+   ```caddy
+   relay.deine-domain.de {
+   	reverse_proxy 127.0.0.1:8787
+   }
+   ```
+   Läuft der vorhandene Caddy selbst in Docker, statt `127.0.0.1` die Host-IP aus Sicht des Containers nehmen (z. B. `host.docker.internal:8787` mit `extra_hosts: ["host.docker.internal:host-gateway"]`) oder beide Container ins selbe Docker-Netz hängen und `reverse_proxy pk-relay:8787` schreiben.
+3. Prüfen: `curl https://relay.deine-domain.de/health` → `{"ok":true,"service":"pkmessenger-relay",…}`. In der App: Einstellungen → Support → Erweitert → „Verbindung testen“.
+
 ## Betrieb auf dem Proxmox (ohne Docker)
 
 Siehe **[docs/proxmox-quickstart.md](../docs/proxmox-quickstart.md)** – Einzeiler-Install, Reverse-Proxy (Caddy/Nginx) für TLS + Domain, `update`-Befehl.
