@@ -75,6 +75,23 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   let controlAllowed = true; // „nur Zusehen“ schaltet das aus
   const activity = [];
   let lastShot = null; // #158: zuletzt aufgenommenes Bild (kurz zwischengespeichert)
+  // #160: Was hat der Helfer in dieser Sitzung gemacht? (für die Zusammenfassung beim Beenden; ohne eingegebene Texte)
+  let sessionLog = [];
+  const ACTION_TEXT = { click: 'Geklickt', type: 'Eingegeben in', 'open-settings': 'Einstellungen geöffnet', draw: 'Gezeichnet', 'clear-draw': 'Zeichnung gelöscht' };
+  function recordAction(action) {
+    if (!ACTION_TEXT[action.type]) return; // Maus, Scrollen, Chat: nicht einzeln
+    const field = (redactView(getView()).fields || []).find((x) => x.id === action.target);
+    const last = sessionLog[sessionLog.length - 1];
+    if (action.type === 'draw' && last?.type === 'draw') return void (last.count = (last.count || 1) + 1);
+    sessionLog.push({ at: now(), type: action.type, text: ACTION_TEXT[action.type], label: field ? field.label : '', screen: redactView(getView()).screen });
+    sessionLog = sessionLog.slice(-200);
+  }
+  function summary() {
+    if (!sessionMeta) return null;
+    const out = { helper: sessionMeta.name, started: sessionMeta.started, ended: now(), actions: sessionLog.slice(), chats: chatLog.length };
+    return out.actions.length || out.chats ? out : null;
+  }
+  let sessionMeta = null;
   let chatLog = []; // #160: Hilfe-Chat zwischen Helfer und Nutzer (nur im Speicher, endet mit der Hilfe)
   function addChat(from, text) {
     const e = { from, text: String(text).trim().slice(0, 300), at: now() };
@@ -185,6 +202,8 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       const ok = await askUser({ helper: helperName, ip });
       if (!ok) return { code: 200, obj: seal({ error: 'Am PC abgelehnt oder keine Antwort.' }, pairing.key) };
       session = { key: pairing.key, expires: now() + SESSION_TTL_MS, approved: true, control: controlAllowed, name: helperName };
+      sessionMeta = { name: helperName, started: now() };
+      sessionLog = [];
       pairing = null;
       log('Helfer verbunden', { helper: helperName });
       emitStatus();
@@ -216,6 +235,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed });
       if (!verdict.ok) return { code: 200, obj: seal({ rejected: verdict.reason }, session.key) };
       // #160: Chat-Nachrichten landen im Hilfe-Chat, nicht als Aktion in der Oberfläche
+      recordAction(data.action);
       if (data.action.type === 'chat') addChat('helfer', data.action.text);
       // #161: die Maus des Helfers trägt seinen Namen (nur Anzeige beim Nutzer)
       else applyAction(data.action.type === 'cursor' ? { ...data.action, name: session.name } : data.action);
@@ -428,7 +448,16 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   }
 
   /** Helfer trennen, aber Code offen lassen (falls jemand anderes helfen soll). */
+  // #160: Zusammenfassung an die Oberfläche („Das hat der Helfer gemacht“) – einmal pro Sitzung
+  function emitSummary() {
+    const sum = summary();
+    if (sum) emit('help:summary', sum);
+    sessionMeta = null;
+    sessionLog = [];
+  }
+
   function disconnect() {
+    emitSummary();
     session = null;
     log('Helfer getrennt');
     emitStatus();
@@ -438,6 +467,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   /** Alles beenden (Knopf oder Strg+C): Server zu, keine Verbindung mehr. */
   const STOP_TEXT = { knopf: 'Knopf „Hilfe beenden“', tastatur: 'Tastenkürzel Strg+Umschalt+X', 'kein-link': 'kein Link möglich', app: 'App wird beendet', unbekannt: '' };
   function stop({ reason = 'unbekannt' } = {}) {
+    emitSummary();
     pairing = null;
     session = null;
     chatLog = [];

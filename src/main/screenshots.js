@@ -1215,6 +1215,13 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
       await js(win, `document.querySelector('.help-chat__bubble')?.click()`);
       await wait(400);
       await shoot(win, dir, '89b-hilfe-zeichnung-chat');
+      // #160: Zusammenfassung nach der Hilfe (Beispiel-Daten, wie sie help.js beim Beenden schickt)
+      const t0 = Date.now() - 4 * 60000;
+      win.webContents.send('pk:event', { type: 'help:summary', payload: { helper: 'Alex', started: t0, ended: Date.now(), chats: 3, actions: [{ at: t0 + 20000, type: 'open-settings', text: 'Einstellungen geöffnet', label: '' }, { at: t0 + 40000, type: 'click', text: 'Geklickt', label: 'Aussehen' }, { at: t0 + 60000, type: 'click', text: 'Geklickt', label: 'Lila' }, { at: t0 + 90000, type: 'draw', text: 'Gezeichnet', label: '', count: 2 }, { at: t0 + 120000, type: 'type', text: 'Eingegeben in', label: 'Servername' }] } });
+      await wait(500);
+      await shoot(win, dir, '89c-hilfe-zusammenfassung');
+      await js(win, `[...document.querySelectorAll('.help-summary .btn')].find((b) => b.textContent.includes('Passt'))?.click()`);
+      await wait(200);
       console.log(`[hilfe-160] ${await js(win, `JSON.stringify({ zeichnung: document.querySelectorAll('.help-draw polyline').length, chat: Boolean(document.querySelector('.help-chat')) })`)}`);
       await js(win, `document.querySelector('.settings__nav [data-nav="support"]')?.click()`);
       await wait(300);

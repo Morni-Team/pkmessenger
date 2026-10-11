@@ -5178,3 +5178,17 @@ body.help-active .help-bar {
   margin: 0 0 6px;
   line-height: 1.5;
 }
+
+/* ---------- Fernhilfe: Zusammenfassung (#160) ---------- */
+.help-summary {
+  width: min(560px, calc(100vw - 32px));
+}
+.help-summary__list {
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 8px 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}

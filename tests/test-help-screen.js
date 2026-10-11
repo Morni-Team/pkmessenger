@@ -175,3 +175,50 @@ test('#161 Scrollen am Mauspunkt geprüft; Maus trägt den Helfer-Namen; unverä
   assert.ok(shots >= 2);
   help.stop();
 });
+
+test('#160 Zusammenfassung nach der Hilfe: Klicks mit Beschriftung, nie eingegebener Text; nur einmal; leer → keine', async () => {
+  const nacl = require('tweetnacl');
+  const { createHelp } = require('../src/main/help');
+  const events = [];
+  const view = { screen: 'settings', fields: [{ id: 'h1', label: 'Aussehen' }, { id: 'h2', label: 'Servername' }, { id: 'h3', label: 'App-Passwort', secret: true }] };
+  const help = createHelp({
+    emit: (t, p) => {
+      events.push([t, p]);
+      if (t === 'help:pending' && !p.done) setImmediate(() => help.decide({ id: p.id, allow: true }));
+    },
+    getView: () => view,
+    applyAction: () => {},
+    getRelay: () => null,
+    hostName: 'pc.local',
+    port: 0,
+    bindHost: '127.0.0.1',
+    lanAddresses: () => ['127.0.0.1'],
+  });
+  const r = await help.request();
+  const key = new Uint8Array(Buffer.from(new URL(r.url).hash.replace('#c=', ''), 'base64url'));
+  const seal = (obj) => {
+    const n = nacl.randomBytes(24);
+    return { n: Buffer.from(n).toString('base64'), c: Buffer.from(nacl.secretbox(Buffer.from(JSON.stringify(obj)), n, key)).toString('base64') };
+  };
+  const base = `http://127.0.0.1:${help._test.handleAddress().port}`;
+  const post = async (p, body) => (await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  await post('/pair', { code: r.code, ...seal({ name: 'Alex', t: Date.now() }) });
+  const act = (action) => post('/act', seal({ t: Date.now(), action }));
+  await act({ type: 'click', target: 'h1' });
+  await act({ type: 'type', target: 'h2', text: 'Geheimer Servername 123' });
+  await act({ type: 'click', target: 'h3' }); // abgelehnt → nicht in der Liste
+  await act({ type: 'cursor', x: 0.5, y: 0.5 }); // Maus → nicht in der Liste
+  await act({ type: 'draw', points: [[0.1, 0.1], [0.2, 0.2]] });
+  await act({ type: 'draw', points: [[0.1, 0.1], [0.2, 0.2]] });
+  await act({ type: 'chat', text: 'Fertig!' });
+  help.stop({ reason: 'knopf' });
+  const sums = events.filter(([t]) => t === 'help:summary').map(([, p]) => p);
+  assert.equal(sums.length, 1);
+  const s = sums[0];
+  assert.equal(s.helper, 'Alex');
+  assert.equal(s.chats, 1);
+  assert.deepEqual(s.actions.map((a) => `${a.text}|${a.label}|${a.count || 1}`), ['Geklickt|Aussehen|1', 'Eingegeben in|Servername|1', 'Gezeichnet||2']);
+  assert.doesNotMatch(JSON.stringify(s), /Geheimer Servername/); // eingegebener Text taucht nie auf
+  help.stop();
+  assert.equal(events.filter(([t]) => t === 'help:summary').length, 1); // nicht doppelt
+});
