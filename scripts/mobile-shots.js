@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
   const page = path.join(__dirname, '..', 'mobile', 'www', 'index.html');
   await win.loadFile(page);
   // Tour beim ersten Start überspringen (eigener Bildtest weiter unten), dann frisch laden
-  await win.webContents.executeJavaScript(`localStorage.clear(); localStorage.setItem('pk.tour.v1', JSON.stringify({ status: 'skipped' }))`);
+  await win.webContents.executeJavaScript(`localStorage.clear(); localStorage.setItem('pk.tour.v1', JSON.stringify({ status: 'skipped' })); localStorage.setItem('pk.privacy.v1', JSON.stringify({ version: 99, at: 1 }))`);
   await win.loadFile(page);
   const js = (code) => win.webContents.executeJavaScript(code);
   const shot = async (name) => {

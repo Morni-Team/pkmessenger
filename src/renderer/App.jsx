@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import PrivacyConsent, { privacyAccepted } from './components/PrivacyConsent.jsx';
 import { api, onEvent } from './api';
 import { bus } from './state';
 import Workspace from './components/Workspace.jsx';
@@ -82,6 +83,7 @@ export default function App() {
   const [appInfo, setAppInfo] = useState({ version: null, update: { state: 'idle' } });
   const everReady = useRef(false);
   const [locked, setLocked] = useState(null); // null = noch unbekannt
+  const [privacyOk, setPrivacyOk] = useState(() => privacyAccepted()); // #160: Datenschutz beim ersten Start
 
   const toast = useCallback((t) => {
     const id = Math.random().toString(36).slice(2);
@@ -112,7 +114,8 @@ export default function App() {
   if (status?.state === 'ready') everReady.current = true;
 
   let screen;
-  if (locked) screen = <LockScreen onUnlocked={() => setLocked(false)} />;
+  if (!privacyOk) screen = <PrivacyConsent onAccept={() => setPrivacyOk(true)} />;
+  else if (locked) screen = <LockScreen onUnlocked={() => setLocked(false)} />;
   else if (locked === null) screen = <ConnectingScreen />;
   else if (!status || status.state === 'idle' || (status.state === 'connecting' && !everReady.current)) screen = <ConnectingScreen />;
   else if (status.state === 'setup') screen = <SetupScreen status={status} onReconnect={reconnect} />;
