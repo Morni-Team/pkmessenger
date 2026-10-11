@@ -178,6 +178,7 @@
       if (v.hidden) $('fields').textContent = '';
       else renderFields(v);
       lastView = v;
+      renderChat(out.chat);
       canControl = Boolean(out.control);
       // #158: echtes Bild der App holen (nicht über die Vermittler – zu groß dafür)
       var wantShot = out.screen && !v.hidden && !(direct && direct.mode === 'vermittler');
@@ -220,7 +221,7 @@
     return { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height };
   }
   $('shot').addEventListener('click', function (e) {
-    if (!canControl || !lastView) return;
+    if (drawMode || !canControl || !lastView) return;
     var p = pointOf(e);
     var hit = (lastView.fields || [])
       .filter(function (f) { return f.rect && !f.secret && p.x >= f.rect.x && p.x <= f.rect.x + f.rect.w && p.y >= f.rect.y && p.y <= f.rect.y + f.rect.h; })
@@ -232,9 +233,94 @@
   // Eigene Maus dem Nutzer zeigen (höchstens 5× pro Sekunde)
   var lastMove = 0;
   $('shot').addEventListener('mousemove', function (e) {
-    if (!canControl || Date.now() - lastMove < 200) return;
+    if (stroke) {
+      var q = pointOf(e);
+      var last = stroke[stroke.length - 1];
+      if (!last || Math.abs(q.x - last[0]) + Math.abs(q.y - last[1]) > 0.004) stroke.push([clamp(q.x), clamp(q.y)]);
+      drawLocal(stroke, true);
+      return;
+    }
+    if (drawMode || !canControl || Date.now() - lastMove < 200) return;
     lastMove = Date.now();
     var p = pointOf(e);
     call('/act', { action: { type: 'cursor', x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) } });
   });
+
+  // ---- #160: Werkzeuge: Einstellungen öffnen, Zeichnen, Chat ----
+  function clamp(n) { return Math.min(1, Math.max(0, n)); }
+  $('opensettings').onclick = function () {
+    call('/act', { action: { type: 'open-settings' } }).then(function (r) { $('shothint').textContent = r && r.rejected ? r.rejected : '⚙️ Einstellungen werden beim Nutzer geöffnet …'; });
+  };
+  var drawMode = false;
+  var stroke = null;
+  $('drawmode').onclick = function () {
+    drawMode = !drawMode;
+    $('drawmode').classList.toggle('on', drawMode);
+    $('shotwrap').classList.toggle('drawing', drawMode);
+    $('shothint').textContent = drawMode ? '✏️ Zeichnen an: mit gedrückter Maus aufs Bild malen – der Nutzer sieht es in seiner App.' : '';
+  };
+  $('drawclear').onclick = function () {
+    $('shotdraw').textContent = '';
+    call('/act', { action: { type: 'clear-draw' } });
+  };
+  function drawLocal(points, live) {
+    var svg = $('shotdraw');
+    var line = live && svg.lastChild && svg.lastChild.getAttribute('data-live') ? svg.lastChild : document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    if (live) line.setAttribute('data-live', '1');
+    line.setAttribute('points', points.map(function (p) { return p[0] * 1000 + ',' + p[1] * 1000; }).join(' '));
+    if (!line.parentNode) svg.appendChild(line);
+    return line;
+  }
+  $('shot').addEventListener('mousedown', function (e) {
+    if (!drawMode || !canControl) return;
+    e.preventDefault();
+    var p = pointOf(e);
+    stroke = [[clamp(p.x), clamp(p.y)]];
+  });
+  window.addEventListener('mouseup', function () {
+    if (!stroke) return;
+    var pts = stroke;
+    stroke = null;
+    var line = $('shotdraw').lastChild;
+    if (line) line.removeAttribute('data-live');
+    if (pts.length < 2) return;
+    // höchstens 200 Punkte schicken (gleichmäßig ausdünnen)
+    var step = Math.ceil(pts.length / 200);
+    var send = pts.filter(function (_, i) { return i % step === 0; });
+    if (send.length < 2) send = [pts[0], pts[pts.length - 1]];
+    call('/act', { action: { type: 'draw', points: send } });
+    setTimeout(function () { if (line && line.parentNode) line.parentNode.removeChild(line); }, 15000);
+  });
+
+  // Chat: Verlauf kommt mit jeder Ansicht; Senden über /act (type: chat)
+  var chatCount = -1;
+  function renderChat(list) {
+    if (!Array.isArray(list)) return;
+    show($('hchat'), true);
+    if (list.length === chatCount) return;
+    chatCount = list.length;
+    var box = $('hchatlog');
+    box.textContent = '';
+    if (!list.length) {
+      var hint = document.createElement('p');
+      hint.className = 'in';
+      hint.textContent = 'Hier könnt ihr euch schreiben. Der Nutzer sieht deine Nachrichten in seiner App.';
+      box.appendChild(hint);
+    }
+    list.forEach(function (m) {
+      var p = document.createElement('p');
+      p.className = m.from === 'helfer' ? 'out' : 'in';
+      p.textContent = String(m.text || '');
+      box.appendChild(p);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+  function sendChat() {
+    var t = ($('hchatin').value || '').trim();
+    if (!t) return;
+    $('hchatin').value = '';
+    call('/act', { action: { type: 'chat', text: t.slice(0, 300) } });
+  }
+  $('hchatsend').onclick = sendChat;
+  $('hchatin').addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat(); });
 })();

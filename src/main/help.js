@@ -75,6 +75,14 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   let controlAllowed = true; // „nur Zusehen“ schaltet das aus
   const activity = [];
   let lastShot = null; // #158: zuletzt aufgenommenes Bild (kurz zwischengespeichert)
+  let chatLog = []; // #160: Hilfe-Chat zwischen Helfer und Nutzer (nur im Speicher, endet mit der Hilfe)
+  function addChat(from, text) {
+    const e = { from, text: String(text).trim().slice(0, 300), at: now() };
+    chatLog.push(e);
+    chatLog = chatLog.slice(-50);
+    emit('help:chat', e);
+    return e;
+  }
 
   function log(action, extra = {}) {
     const e = { at: now(), action, ...extra };
@@ -99,6 +107,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       relayConnected: relayUp,
       relayError,
       direct: p2pState,
+      chat: chatLog.slice(-30),
       activity: activity.slice(0, 20),
     };
   }
@@ -184,7 +193,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     if (!session || session.expires < now()) return { code: 401, obj: { error: 'Nicht verbunden.' } };
     const data = openBody(body, session.key);
     if (!data) return { code: 400, obj: { error: 'Ungültige oder wiederholte Anfrage.' } };
-    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: controlAllowed, screen: Boolean(captureScreen) }, session.key) };
+    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: controlAllowed, screen: Boolean(captureScreen), chat: chatLog.slice(-30) }, session.key) };
     // #158: echtes Bild der App (geschwärzt in help-screen.js) – höchstens alle 700 ms neu aufnehmen
     if (path === '/screen') {
       if (!captureScreen) return { code: 200, obj: seal({ screen: null }, session.key) };
@@ -202,7 +211,9 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     if (path === '/act') {
       const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed });
       if (!verdict.ok) return { code: 200, obj: seal({ rejected: verdict.reason }, session.key) };
-      applyAction(data.action);
+      // #160: Chat-Nachrichten landen im Hilfe-Chat, nicht als Aktion in der Oberfläche
+      if (data.action.type === 'chat') addChat('helfer', data.action.text);
+      else applyAction(data.action);
       if (data.action?.type !== 'cursor') log('Helfer-Aktion', { kind: data.action?.type }); // Mausbewegungen nicht protokollieren
       return { code: 200, obj: seal({ ok: true }, session.key) };
     }
@@ -396,6 +407,13 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     });
   }
 
+  /** #160: Nachricht des Nutzers an den Helfer (Hilfe-Chat). */
+  function chat({ text }) {
+    if (!session) return { ok: false, chat: chatLog.slice(-30) };
+    addChat('nutzer', text);
+    return { ok: true, chat: chatLog.slice(-30) };
+  }
+
   /** Mitsteuern erlauben/sperren (nur Zusehen). */
   function setControl({ on }) {
     controlAllowed = Boolean(on);
@@ -417,6 +435,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   function stop({ reason = 'unbekannt' } = {}) {
     pairing = null;
     session = null;
+    chatLog = [];
     stopRelay();
     stopP2P();
     if (pendingApproval) {
@@ -431,7 +450,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     return status();
   }
 
-  return { status, request, decide, setControl, disconnect, stop, _test: { seal, unseal, handleAddress: () => server?.address() } };
+  return { status, request, decide, setControl, disconnect, stop, chat, chatLog: () => chatLog.slice(-30), _test: { seal, unseal, handleAddress: () => server?.address() } };
 }
 
 module.exports = { createHelp, isPrivateIp, DEFAULT_PORT };

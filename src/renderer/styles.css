@@ -5036,3 +5036,110 @@ body.help-active .help-bar {
   margin: 6px 0;
   font-size: 12px;
 }
+
+/* ---------- Fernhilfe: Zeichnungen + Chat (#160) ---------- */
+.help-draw {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9998;
+  pointer-events: none;
+}
+.help-draw polyline {
+  fill: none;
+  stroke: #f472b6;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.help-chat__bubble {
+  position: fixed;
+  right: 18px;
+  bottom: 70px;
+  z-index: 61;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 22px;
+  background: var(--accent);
+  color: var(--accent-ink, #06201c);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.help-chat__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #ef4444;
+  color: #fff;
+}
+.help-chat {
+  position: fixed;
+  right: 18px;
+  bottom: 70px;
+  z-index: 61;
+  width: min(340px, calc(100vw - 36px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.help-chat__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+}
+.help-chat__log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.help-chat__msg {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  max-width: 85%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+}
+.help-chat__msg--in {
+  background: var(--panel-2);
+  justify-self: start;
+}
+.help-chat__msg--out {
+  background: color-mix(in srgb, var(--accent) 25%, var(--panel-2));
+  justify-self: end;
+}
+.help-chat__row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+.help-chat__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+}

@@ -79,6 +79,13 @@ const ALLOWED = {
   highlight: (a) => typeof a.target === 'string' && a.target.length <= 80,
   scroll: (a) => ['up', 'down', 'top', 'bottom'].includes(a.dir),
   cursor: (a) => unit(a.x) && unit(a.y), // #158: Anteil der Fenstergröße
+  // #160: auf dem Bild zeichnen (Linie aus max. 200 Punkten, Anteile 0…1) bzw. Zeichnung löschen
+  draw: (a) => Array.isArray(a.points) && a.points.length >= 2 && a.points.length <= 200 && a.points.every((p) => Array.isArray(p) && p.length === 2 && unit(p[0]) && unit(p[1])),
+  'clear-draw': () => true,
+  // #160: Einstellungen öffnen – harmlos, darf der Helfer auch aus dem Chat-Bereich heraus
+  'open-settings': () => true,
+  // #160: Nachricht im Hilfe-Chat (nur Text, wird beim Nutzer als Text angezeigt)
+  chat: (a) => typeof a.text === 'string' && a.text.trim().length > 0 && a.text.length <= 300,
 };
 
 /**
@@ -88,9 +95,12 @@ const ALLOWED = {
  */
 function allowHelperAction(action, { view = {}, enabled = true, controlAllowed = true } = {}) {
   if (!enabled) return { ok: false, reason: 'Fernhilfe ist aus.' };
-  if (!controlAllowed) return { ok: false, reason: 'Der Nutzer hat das Mitsteuern verboten (nur Zusehen).' };
   const a = action && typeof action === 'object' ? action : {};
-  if (redactView(view).hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
+  // Chatten ist kein Mitsteuern – geht auch bei „nur Zusehen“
+  if (!controlAllowed && a.type !== 'chat') return { ok: false, reason: 'Der Nutzer hat das Mitsteuern verboten (nur Zusehen).' };
+  // #160: Chat und „Einstellungen öffnen“ gehen immer – alles andere nicht im Chat-Bereich
+  const anywhere = a.type === 'chat' || a.type === 'open-settings';
+  if (!anywhere && redactView(view).hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
   const check = ALLOWED[a.type];
   if (!check) return { ok: false, reason: 'Diese Aktion ist nicht erlaubt.' };
   if (SECRET_FIELD.test(String(a.target || ''))) return { ok: false, reason: 'Sicherheits-Felder bedient nur der Nutzer selbst.' };

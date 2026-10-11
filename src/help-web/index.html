@@ -34,6 +34,19 @@
       .shot img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); cursor: crosshair; user-select: none; }
       #shotcursor { position: absolute; width: 18px; height: 18px; border: 2px solid var(--accent); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: left 0.15s, top 0.15s; box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.25); }
       #fieldlist summary { cursor: pointer; margin: 6px 0; }
+      .tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+      .tools button.on { background: var(--accent); color: #062b27; font-weight: 700; }
+      #shotdraw { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #shotdraw polyline { fill: none; stroke: #f472b6; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+      .shot.drawing img { cursor: crosshair; outline: 2px dashed #f472b6; }
+      .hchat { position: fixed; right: 16px; bottom: 16px; width: min(340px, calc(100vw - 32px)); max-height: 50vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.45); z-index: 60; }
+      .hchat__head { padding: 8px 12px; font-weight: 700; border-bottom: 1px solid var(--line); }
+      .hchat__log { flex: 1; overflow-y: auto; padding: 8px 12px; display: grid; gap: 6px; align-content: start; }
+      .hchat__log p { margin: 0; padding: 6px 10px; border-radius: 10px; max-width: 85%; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+      .hchat__log .in { background: var(--panel2); justify-self: start; }
+      .hchat__log .out { background: rgba(45, 212, 191, 0.25); justify-self: end; }
+      .hchat__row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+      .hchat__row input { flex: 1; min-width: 0; }
       .screen { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
       .hidden { display: none !important; }
       #cursor { position: fixed; width: 16px; height: 16px; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none; transition: all 0.15s; z-index: 50; }
@@ -55,10 +68,17 @@
       <section id="live" class="card hidden">
         <div class="screen" id="screen"></div>
         <div id="note" class="warn"></div>
+        <!-- #160: Werkzeuge für den Helfer -->
+        <div class="tools">
+          <button id="opensettings" title="Öffnet beim Nutzer die Einstellungen">⚙️ Einstellungen öffnen</button>
+          <button id="drawmode" title="Auf das Bild zeichnen – der Nutzer sieht es in seiner App">✏️ Zeichnen</button>
+          <button id="drawclear" title="Zeichnungen beim Nutzer löschen">🧽 Zeichnung löschen</button>
+        </div>
         <!-- #158: echtes Bild der App (Chats & Geheimnisse sind schon am PC geschwärzt). Klick = Knopf an dieser Stelle -->
         <div id="shotwrap" class="shot hidden">
           <img id="shot" alt="Bild der App (geschwärzt)" draggable="false" />
           <div id="shotcursor" class="hidden" title="Maus des Nutzers"></div>
+          <svg id="shotdraw" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
         <p id="shothint" class="muted"></p>
         <details id="fieldlist">
@@ -78,6 +98,15 @@
       </section>
     </main>
     <div id="cursor" class="hidden"></div>
+    <!-- #160: Chat mit dem Nutzer -->
+    <div id="hchat" class="hchat hidden" role="dialog" aria-label="Chat mit dem Nutzer">
+      <div class="hchat__head">💬 Chat mit dem Nutzer</div>
+      <div id="hchatlog" class="hchat__log"></div>
+      <div class="hchat__row">
+        <input id="hchatin" maxlength="300" placeholder="Nachricht an den Nutzer …" style="text-transform: none; letter-spacing: normal" />
+        <button id="hchatsend" class="primary">Senden</button>
+      </div>
+    </div>
     <!-- relativ: läuft unter /help/ (PC, Relay) und auf GitHub Pages (/pkmessenger/help/) -->
     <script src="nacl.js"></script>
     <script src="p2p.js"></script>

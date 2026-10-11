@@ -1198,6 +1198,12 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
       const shot = await captureHelp();
       if (shot?.img) require('node:fs').writeFileSync(require('node:path').join(dir, '89-helfer-bild.jpg'), Buffer.from(shot.img.split(',')[1], 'base64'));
       console.log(`[helfer-bild] ${shot ? `${shot.w}x${shot.h}, ${Math.round(shot.img.length / 1024)} KB` : 'kein Bild'}`);
+      // #160: so sieht der Nutzer eine Zeichnung des Helfers und den Hilfe-Chat
+      await js(win, `window.dispatchEvent(new CustomEvent('help:draw', { detail: { type: 'draw', points: [[0.3, 0.35], [0.36, 0.42], [0.45, 0.44], [0.55, 0.4]] } }))`);
+      await js(win, `document.querySelector('.help-chat__bubble')?.click()`);
+      await wait(400);
+      await shoot(win, dir, '89b-hilfe-zeichnung-chat');
+      console.log(`[hilfe-160] ${await js(win, `JSON.stringify({ zeichnung: document.querySelectorAll('.help-draw polyline').length, chat: Boolean(document.querySelector('.help-chat')) })`)}`);
       await js(win, `document.querySelector('.settings__nav [data-nav="support"]')?.click()`);
       await wait(300);
     }

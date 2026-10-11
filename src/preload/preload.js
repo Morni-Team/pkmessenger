@@ -21,6 +21,8 @@ const EVENT_TYPES = new Set([
   'remote:activity',
   'remote:pending',
   'help:status',
+  // #160: Hilfe-Chat
+  'help:chat',
   'help:pending',
   'help:activity',
   'ai:job-done',
@@ -62,6 +64,7 @@ contextBridge.exposeInMainWorld('api', {
   helpStatus: call('pk:help-status'),
   helpRequest: call('pk:help-request'),
   helpStop: call('pk:help-stop'),
+  helpChat: call('pk:help-chat'),
   helpControl: call('pk:help-control'),
   helpDecide: call('pk:help-decide'),
   helpDisconnect: call('pk:help-disconnect'),

@@ -162,6 +162,8 @@ export function HelpController({ toast }) {
           </button>
         </div>
       )}
+      {active && <HelpDrawings />}
+      {active && <HelpChat />}
       {active && cursor && (
         <div
           style={{
@@ -180,5 +182,97 @@ export function HelpController({ toast }) {
         </div>
       )}
     </>
+  );
+}
+
+// #160: Zeichnungen des Helfers über der App (Linien aus Anteilen 0…1). Verschwinden nach 15 s oder „Löschen“.
+function HelpDrawings() {
+  const [lines, setLines] = useState([]);
+  useEffect(() => {
+    const on = (e) => {
+      const a = e.detail || {};
+      if (a.type === 'clear-draw') return setLines([]);
+      const id = `${Date.now()}-${Math.random()}`;
+      setLines((l) => [...l.slice(-20), { id, points: a.points }]);
+      setTimeout(() => setLines((l) => l.filter((x) => x.id !== id)), 15000);
+    };
+    window.addEventListener('help:draw', on);
+    return () => window.removeEventListener('help:draw', on);
+  }, []);
+  if (!lines.length) return null;
+  return (
+    <svg className="help-draw" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+      {lines.map((l) => (
+        <polyline key={l.id} points={l.points.map((p) => `${p[0] * 1000},${p[1] * 1000}`).join(' ')} />
+      ))}
+    </svg>
+  );
+}
+
+// #160: Schwebender Chat zwischen Nutzer und Helfer (nur Text, nur während der Fernhilfe, nichts wird gespeichert)
+function HelpChat() {
+  const [log, setLog] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [text, setText] = useState('');
+  const endRef = useRef(null);
+  useEffect(() => {
+    api
+      .helpStatus()
+      .then((s) => setLog(Array.isArray(s?.chat) ? s.chat : []))
+      .catch(() => {});
+    const off = bus.on((type, p) => {
+      if (type !== 'help:chat') return;
+      setLog((l) => [...l, p].slice(-50));
+      if (p.from === 'helfer') {
+        setOpen((o) => {
+          if (!o) setUnread((n) => n + 1);
+          return o;
+        });
+      }
+    });
+    return () => {
+      off();
+    };
+  }, []);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'end' });
+  }, [log, open]);
+  const send = async () => {
+    const t = text.trim();
+    if (!t) return;
+    setText('');
+    await api.helpChat({ text: t }).catch(() => {});
+  };
+  if (!open)
+    return (
+      <button className="help-chat__bubble" onClick={() => (setOpen(true), setUnread(0))} aria-label="Chat mit dem Helfer öffnen">
+        💬{unread > 0 && <span className="help-chat__badge">{unread}</span>}
+      </button>
+    );
+  return (
+    <div className="help-chat" role="dialog" aria-label="Chat mit dem Helfer">
+      <div className="help-chat__head">
+        💬 Chat mit dem Helfer
+        <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Chat einklappen">
+          ▾
+        </button>
+      </div>
+      <div className="help-chat__log">
+        {log.length === 0 && <p className="muted small">Noch keine Nachrichten. Schreib deinem Helfer, wobei du Hilfe brauchst.</p>}
+        {log.map((m, i) => (
+          <p key={`${m.at}-${i}`} className={`help-chat__msg help-chat__msg--${m.from === 'helfer' ? 'in' : 'out'}`}>
+            {m.text}
+          </p>
+        ))}
+        <div ref={endRef} />
+      </div>
+      <div className="help-chat__row">
+        <input value={text} maxLength={300} placeholder="Nachricht an den Helfer …" aria-label="Nachricht an den Helfer" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
+        <button className="btn btn--primary btn--small" onClick={send}>
+          Senden
+        </button>
+      </div>
+    </div>
   );
 }
