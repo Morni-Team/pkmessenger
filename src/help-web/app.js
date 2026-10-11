@@ -118,7 +118,13 @@
     if (box) box.textContent = diagLines.join('\n');
   }
   diag('Seite geladen · ' + (navigator.userAgent.match(/(Firefox|Edg|OPR|Chrome|Safari)\/[\d.]+/) || ['Browser ?'])[0] + ' · WebRTC: ' + (typeof RTCPeerConnection === 'function' ? 'ja' : 'NEIN (abgeschaltet?)') + ' · Modus: ' + (p2pMode ? 'direkt' : relayMode ? 'Server' : 'WLAN') + (relayHost ? ' · Ersatz-Server: ' + relayHost : ''));
-  if (frag.get('p') === '1' && !p2pMode) diag('⚠ Direktverbindungs-Skript (p2p.js) nicht geladen – Werbeblocker?');
+  // #152: Plugins erkennen und verständlich sagen, was zu tun ist
+  if (frag.get('p') === '1' && !p2pMode) {
+    diag('⚠ Direktverbindung nicht geladen – ein Browser-Plugin (Werbe-/Tracking-Blocker) blockiert sie wahrscheinlich');
+    msg.textContent = '⚠ Ein Browser-Plugin (z. B. Werbeblocker) blockiert die Verbindung. Bitte für diese Seite ausschalten und neu laden.';
+  } else if (p2pMode && typeof RTCPeerConnection !== 'function') {
+    diag('ℹ WebRTC ist in diesem Browser aus (Plugin oder Datenschutz-Einstellung) – es geht trotzdem über die Vermittler');
+  }
   if ($('diagcopy')) $('diagcopy').onclick = function () {
     var text = 'PKMessenger Helfer-Verlauf\n' + diagLines.join('\n');
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { $('diagcopy').textContent = 'Kopiert ✓'; });

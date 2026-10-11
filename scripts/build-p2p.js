@@ -21,8 +21,16 @@ async function buildP2P() {
   const help = path.join(pages, 'help');
   fs.rmSync(pages, { recursive: true, force: true });
   fs.mkdirSync(help, { recursive: true });
-  for (const f of ['index.html', 'app.js', 'nacl.js']) fs.copyFileSync(path.join(ROOT, 'src', 'help-web', f), path.join(help, f));
-  await esbuild.build({ ...common, entryPoints: [path.join(ROOT, 'src', 'help-web', 'p2p-entry.js')], outfile: path.join(help, 'p2p.js') });
+  fs.copyFileSync(path.join(ROOT, 'src', 'help-web', 'nacl.js'), path.join(help, 'nacl.js'));
+  // #152: Werbeblocker sperren gern Dateien mit „p2p“ im Namen → Direktverbindungs-Code steckt auf der Pages-Seite
+  // in DERSELBEN Datei wie die Seite (app.js). Es gibt kein eigenes p2p.js mehr, das man blockieren könnte.
+  const p2p = await esbuild.build({ ...common, entryPoints: [path.join(ROOT, 'src', 'help-web', 'p2p-entry.js')], write: false });
+  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'help-web', 'app.js'), 'utf8');
+  fs.writeFileSync(path.join(help, 'app.js'), `${p2p.outputFiles[0].text}\n${appSrc}`);
+  const html = fs.readFileSync(path.join(ROOT, 'src', 'help-web', 'index.html'), 'utf8');
+  const pageHtml = html.replace(/\s*<script src="p2p\.js"><\/script>/, '');
+  if (pageHtml === html) throw new Error('index.html: <script src="p2p.js"> nicht gefunden');
+  fs.writeFileSync(path.join(help, 'index.html'), pageHtml);
   fs.writeFileSync(
     path.join(pages, 'index.html'),
     '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PKMessenger</title>' +
