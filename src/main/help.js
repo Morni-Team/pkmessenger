@@ -261,8 +261,21 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
           }
           const was = p2pState;
           p2pState = st;
-          if (st === 'verbunden' && was !== st) log('Helfer direkt verbunden');
-          if (st === 'vermittler' && was !== st) log('Helfer über die Vermittler verbunden (keine Direktverbindung möglich)');
+          // #148: jeden Schritt der Direktverbindung protokollieren (Fehlersuche)
+          const STEP_TEXT = {
+            angeboten: 'Direktverbindung: Helfer gefunden, baue Verbindung auf …',
+            connecting: 'Direktverbindung: verbinde …',
+            connected: 'Direktverbindung: Netzweg gefunden',
+            failed: 'Direktverbindung fehlgeschlagen (Netz/VPN blockiert) – Helfer kann über die Vermittler weitermachen',
+            disconnected: 'Direktverbindung unterbrochen',
+            getrennt: 'Direktverbindung getrennt',
+            verbunden: 'Helfer direkt verbunden ✓',
+            vermittler: 'Helfer über die Vermittler verbunden (keine Direktverbindung möglich)',
+          };
+          if (was !== st && STEP_TEXT[st]) {
+            log(STEP_TEXT[st]);
+            logger?.info?.('help', `p2p: ${st}`);
+          }
           emitStatus();
         },
       );
@@ -346,7 +359,8 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
         : relay?.httpBase
           ? `${relay.httpBase}/help/#r=${roomId}&c=${b64url(key)}`
           : null;
-      log('Hilfe angefordert');
+      log(direct ? 'Hilfe angefordert – Direktverbindung aktiv (ohne eigenen Server), Ersatz-Server als Rückfall' : relayUrl ? 'Hilfe angefordert – über den Server' : 'Hilfe angefordert – nur im selben WLAN');
+      logger?.info?.('help', `Hilfe angefordert (${direct ? 'direkt' : relayUrl ? 'server' : 'wlan'}, App ${process.versions?.electron ? 'Electron' : 'Node'})`);
       emitStatus();
       return { code, url, relayUrl, port: prt, host: hostName, expires: pairing.expires, relay: Boolean(relayUrl) };
     });
