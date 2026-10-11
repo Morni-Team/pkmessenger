@@ -296,3 +296,33 @@ test('#156 Kopieren mit Strg+C beendet die Fernhilfe NICHT mehr; Not-Aus ist Str
   help.stop({ reason: 'knopf' });
   assert.ok(events.includes('Fernhilfe beendet (Knopf „Hilfe beenden“)'), events.join(' | '));
 });
+
+test('#158 Ersatz-Server war nicht erreichbar → nächster Link nur mit Direktverbindung (keine sinnlosen Server-Versuche)', async () => {
+  const { EventEmitter } = require('node:events');
+  class DeadWS extends EventEmitter {
+    constructor() {
+      super();
+      setImmediate(() => this.emit('error', new Error('write EPROTO SSL alert number 80')));
+    }
+    send() {}
+    close() {}
+  }
+  const help = createHelp({
+    getRelay: () => ({ wss: 'wss://relay.test/ws', httpBase: 'https://relay.test', mode: 'standard' }),
+    WebSocketImpl: DeadWS,
+    hostName: null,
+    port: 0,
+    bindHost: '127.0.0.1',
+    lanAddresses: () => ['127.0.0.1'],
+    p2p: { start() {}, stop() {} },
+    p2pPage: HELP_PAGE,
+  });
+  const first = await help.request();
+  assert.match(first.relayUrl, /&h=relay\.test/); // noch unbekannt → als Rückfall drin
+  await new Promise((r) => setTimeout(r, 20));
+  help.stop();
+  const second = await help.request();
+  assert.ok(second.relayUrl.startsWith(HELP_PAGE));
+  assert.doesNotMatch(second.relayUrl, /&h=/);
+  help.stop();
+});

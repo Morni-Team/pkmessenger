@@ -197,6 +197,9 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   // Relay-Client (außerhalb des WLANs): verbindet sich AUSGEHEND zum Relay, empfängt Helfer-Pakete, antwortet.
   let relayWs = null;
   let relayUp = false;
+  // #158: Zuletzt gesehener Zustand des Ersatz-Servers (über mehrere Hilfe-Sitzungen). Ist er bekannt kaputt, kommt
+  // er gar nicht erst in den Link – die Helfer-Seite versucht ihn dann auch nicht (keine sinnlosen Fehlermeldungen).
+  let relayLastOk = null;
   let relayError = null;
   function stopRelay() {
     const w = relayWs;
@@ -215,6 +218,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       ws = new WS(relay.wss);
     } catch (err) {
       relayError = String(err?.message || err).slice(0, 200);
+      relayLastOk = false;
       return;
     }
     relayWs = ws;
@@ -223,7 +227,10 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       let m = null;
       try { m = JSON.parse(rawMsg.toString()); } catch { return; }
       if (m.relay) {
-        if (m.relay === 'joined') relayUp = true;
+        if (m.relay === 'joined') {
+          relayUp = true;
+          relayLastOk = true;
+        }
         if (m.relay === 'peer') { log(m.connected ? 'Helfer (über Relay) da' : 'Helfer (über Relay) weg'); emitStatus(); }
         return;
       }
@@ -234,6 +241,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     ws.on('close', () => { if (relayWs === ws) { relayWs = null; relayUp = false; } });
     ws.on('error', (err) => {
       relayError = String(err?.message || err).slice(0, 200);
+      relayLastOk = false;
       logger?.warn?.('help', `relay: ${relayError}`);
     });
   }
@@ -359,7 +367,8 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       const url = hostName ? `http://${hostName}:${prt}/help/${hash}` : null;
       // Außerhalb des WLANs: Link über den Relay – der Helfer öffnet ihn überall im Browser (kein QR-Scan nötig).
       // Mit Direktverbindung: Seite von GitHub Pages (kein eigener Server nötig), Relay nur als Rückfall (h=…).
-      const relayHost = relay?.httpBase ? relay.httpBase.replace(/^https:\/\//, '') : '';
+      const relayHost = relay?.httpBase && relayLastOk !== false ? relay.httpBase.replace(/^https:\/\//, '') : '';
+      if (direct && relay?.httpBase && relayLastOk === false) log('Ersatz-Server war zuletzt nicht erreichbar – Link nur mit Direktverbindung');
       const relayUrl = direct
         ? `${p2pPage}#p=1&c=${b64url(key)}${relayHost ? `&r=${roomId}&h=${relayHost}` : ''}`
         : relay?.httpBase
