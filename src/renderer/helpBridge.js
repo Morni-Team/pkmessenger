@@ -93,7 +93,23 @@ function applyAction(action) {
     Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, String(action.text || '').slice(0, 200));
     el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
   } else if (action.type === 'scroll') {
-    const box = document.querySelector('.settings__body, .center-screen') || document.scrollingElement;
+    // #161: den scrollbaren Bereich UNTER der Maus des Helfers nehmen – aber nur innerhalb der Einstellungen/Einrichtung
+    const scope = document.querySelector('.modal.settings, .center-card, .center-screen');
+    let box = null;
+    if (typeof action.x === 'number' && scope) {
+      for (let el = document.elementFromPoint(action.x * innerWidth, action.y * innerHeight); el && scope.contains(el); el = el.parentElement) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 2) {
+          box = el;
+          break;
+        }
+      }
+    }
+    box = box || document.querySelector('.settings__body, .center-screen') || document.scrollingElement;
+    if (typeof action.x === 'number' && (action.dir === 'up' || action.dir === 'down')) {
+      box.scrollBy({ top: action.dir === 'up' ? -180 : 180 });
+      return;
+    }
     if (action.dir === 'top') box.scrollTo({ top: 0 });
     else if (action.dir === 'bottom') box.scrollTo({ top: box.scrollHeight });
     else box.scrollBy({ top: action.dir === 'up' ? -300 : 300 });

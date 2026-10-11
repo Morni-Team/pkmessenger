@@ -184,23 +184,43 @@
       var wantShot = out.screen && !v.hidden && !(direct && direct.mode === 'vermittler');
       var next = function () { setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); };
       if (!wantShot) {
+        shotWanted = false;
         show($('shotwrap'), false);
         $('fieldlist').open = true;
         $('shothint').textContent = v.hidden ? '' : direct && direct.mode === 'vermittler' ? 'Über die Vermittler gibt es nur die Knopf-Liste (Bild wäre zu groß).' : '';
         placeCursor(v);
         return next();
       }
-      return call('/screen', {}).then(function (r) {
-        var shot = r && r.screen;
-        if (shot && shot.img) {
-          $('shot').src = shot.img;
-          show($('shotwrap'), true);
-          $('shothint').textContent = canControl ? 'Klick ins Bild = Klick auf den Knopf an dieser Stelle. Schwarze Flächen sind privat.' : 'Nur Zusehen. Schwarze Flächen sind privat.';
-        } else show($('shotwrap'), false);
-        placeCursor(v);
-        next();
-      }, next);
+      // #161: das Bild läuft in einer eigenen, schnelleren Schleife (nur Änderungen werden übertragen)
+      shotWanted = true;
+      if (!shotLoopRunning) shotLoop();
+      placeCursor(v);
+      next();
     }).catch(function () { $('note').textContent = 'Verbindung verloren.'; });
+  }
+
+  var shotWanted = false;
+  var shotLoopRunning = false;
+  var shotId = 0;
+  function shotLoop() {
+    if (!shotWanted || (direct && direct.mode === 'vermittler')) { shotLoopRunning = false; return; }
+    shotLoopRunning = true;
+    call('/screen', { have: shotId }).then(function (r) {
+      var shot = r && r.screen;
+      if (shot && shot.same) {
+        /* unverändert – nichts zu tun */
+      } else if (shot && shot.img) {
+        shotId = shot.id || 0;
+        $('shot').src = shot.img;
+        show($('shotwrap'), true);
+        placeCursor(lastView);
+        if (!$('shothint').textContent) $('shothint').textContent = canControl ? 'Klick ins Bild = Klick auf den Knopf an dieser Stelle. Mausrad = scrollen. Schwarze Flächen sind privat.' : 'Nur Zusehen. Schwarze Flächen sind privat.';
+      } else {
+        show($('shotwrap'), false);
+        shotWanted = false;
+      }
+      setTimeout(shotLoop, 350);
+    }, function () { setTimeout(shotLoop, 1000); });
   }
 
   // #158: Maus des Nutzers auf dem Bild anzeigen (Anteil 0…1 → Prozent – passt bei jeder Bildgröße)
@@ -322,5 +342,26 @@
     call('/act', { action: { type: 'chat', text: t.slice(0, 300) } });
   }
   $('hchatsend').onclick = sendChat;
+
+  // #161: Mausrad über dem Bild = den Bereich unter der Maus beim Nutzer scrollen
+  var lastWheel = 0;
+  $('shot').addEventListener('wheel', function (e) {
+    if (!canControl) return;
+    e.preventDefault();
+    if (Date.now() - lastWheel < 120) return;
+    lastWheel = Date.now();
+    var p = pointOf(e);
+    call('/act', { action: { type: 'scroll', dir: e.deltaY < 0 ? 'up' : 'down', x: clamp(p.x), y: clamp(p.y) } });
+  }, { passive: false });
+  // #160: Vollbild für den Helfer
+  $('fullscreen').onclick = function () {
+    var w = $('shotwrap');
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (w.requestFullscreen) w.requestFullscreen().catch(function () {});
+  };
+  $('shot').addEventListener('load', function () {
+    var img = $('shot');
+    if (img.naturalWidth && img.naturalHeight) $('shotwrap').style.setProperty('--ar', String(img.naturalWidth / img.naturalHeight));
+  });
   $('hchatin').addEventListener('keydown', function (e) { if (e.key === 'Enter') sendChat(); });
 })();

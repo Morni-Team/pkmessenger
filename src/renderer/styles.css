@@ -5143,3 +5143,17 @@ body.help-active .help-bar {
   background: var(--panel-2);
   color: var(--text);
 }
+/* #161: Name des Helfers an seiner Maus */
+.help-cursor__name {
+  position: absolute;
+  left: 22px;
+  top: 18px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: none;
+  background: #f472b6;
+  color: #fff;
+}

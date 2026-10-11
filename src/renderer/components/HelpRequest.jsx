@@ -117,7 +117,7 @@ export function HelpController({ toast }) {
         if (!running) setCursor(null);
       }
     });
-    const onCursor = (e) => setCursor({ x: e.detail.x, y: e.detail.y });
+    const onCursor = (e) => setCursor({ x: e.detail.x, y: e.detail.y, name: typeof e.detail.name === 'string' ? e.detail.name.slice(0, 40) : '' });
     window.addEventListener('help:cursor', onCursor);
     api.helpStatus().then((s) => s?.running && (setActive(true), startHelpBridge())).catch(() => {});
     const onKey = (e) => {
@@ -179,6 +179,7 @@ export function HelpController({ toast }) {
           }}
         >
           👆
+          {cursor.name && <span className="help-cursor__name">{cursor.name}</span>}
         </div>
       )}
     </>

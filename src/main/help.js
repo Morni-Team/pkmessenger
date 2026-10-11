@@ -197,23 +197,28 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     // #158: echtes Bild der App (geschwärzt in help-screen.js) – höchstens alle 700 ms neu aufnehmen
     if (path === '/screen') {
       if (!captureScreen) return { code: 200, obj: seal({ screen: null }, session.key) };
-      if (!lastShot || now() - lastShot.at > 700) {
+      // #161: schneller – höchstens alle 250 ms neu aufnehmen, und unverändertes Bild NICHT erneut schicken
+      // (der Helfer nennt die Nummer seines Bildes; gleich → nur „same“ statt ~50 KB)
+      if (!lastShot || now() - lastShot.at > 250) {
         let shot = null;
         try {
           shot = await captureScreen(getView());
         } catch (err) {
           logger?.warn?.('help', `Bild: ${err?.message || err}`);
         }
-        lastShot = { at: now(), shot };
+        const same = shot && lastShot?.shot && shot.img === lastShot.shot.img;
+        lastShot = { at: now(), shot, id: same ? lastShot.id : (lastShot?.id || 0) + 1 };
       }
-      return { code: 200, obj: seal({ screen: lastShot.shot }, session.key) };
+      if (lastShot.shot && data.have === lastShot.id) return { code: 200, obj: seal({ screen: { same: true, id: lastShot.id } }, session.key) };
+      return { code: 200, obj: seal({ screen: lastShot.shot ? { ...lastShot.shot, id: lastShot.id } : null }, session.key) };
     }
     if (path === '/act') {
       const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed });
       if (!verdict.ok) return { code: 200, obj: seal({ rejected: verdict.reason }, session.key) };
       // #160: Chat-Nachrichten landen im Hilfe-Chat, nicht als Aktion in der Oberfläche
       if (data.action.type === 'chat') addChat('helfer', data.action.text);
-      else applyAction(data.action);
+      // #161: die Maus des Helfers trägt seinen Namen (nur Anzeige beim Nutzer)
+      else applyAction(data.action.type === 'cursor' ? { ...data.action, name: session.name } : data.action);
       if (data.action?.type !== 'cursor') log('Helfer-Aktion', { kind: data.action?.type }); // Mausbewegungen nicht protokollieren
       return { code: 200, obj: seal({ ok: true }, session.key) };
     }
