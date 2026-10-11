@@ -216,7 +216,7 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     'pk:modules-reset': (p) => requireModules().reset(p),
     'pk:help-status': () => (help ? { ...help.status(), relaySetting: relaySetting(store.get()) } : null),
     'pk:help-request': () => requireHelp().requestWithQr(),
-    'pk:help-stop': () => requireHelp().stop(),
+    'pk:help-stop': (p) => requireHelp().stop(validators.helpStop(p)),
     'pk:help-control': (p) => requireHelp().setControl(validators.flag(p)),
     'pk:help-decide': (p) => requireHelp().decide(validators.remoteDecide(p)),
     'pk:help-disconnect': () => requireHelp().disconnect(),
@@ -270,7 +270,7 @@ function wrap(handler, isTrustedSender, channel = '', isLocked = () => false, lo
     } catch (err) {
       const error = describeError(err);
       // Unerwartete Fehler ins Protokoll (Eingabefehler/erwartbare Discord-Fehler nicht – das wäre nur Rauschen)
-      if (logger && !['VALIDATION', 'LOCKED', 'FORBIDDEN', 'MISSING_PERMISSION', 'NOT_FOUND'].includes(error.code)) logger.error(channel, `${error.code}: ${err?.message || error.message}`, err?.stack?.split('\n').slice(1, 4).join(' '));
+      if (logger && !['VALIDATION', 'LOCKED', 'FORBIDDEN', 'MISSING_PERMISSION', 'NOT_FOUND', 'VOICE_ABORTED'].includes(error.code)) logger.error(channel, `${error.code}: ${err?.message || error.message}`, err?.stack?.split('\n').slice(1, 4).join(' '));
       return { ok: false, error };
     }
   };

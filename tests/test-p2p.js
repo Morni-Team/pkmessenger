@@ -279,3 +279,20 @@ test('#152 Uhr des Helfer-Geräts geht 5 Min. falsch → verbindet trotzdem, PC 
   conn.close();
   host.close();
 });
+
+test('#156 Kopieren mit Strg+C beendet die Fernhilfe NICHT mehr; Not-Aus ist Strg+Umschalt+X; Grund steht im Protokoll', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { validators } = require('../src/main/validate');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'components', 'HelpRequest.jsx'), 'utf8');
+  assert.doesNotMatch(src, /toLowerCase\(\) === 'c'/);
+  assert.match(src, /e\.ctrlKey && e\.shiftKey && \(e\.key \|\| ''\)\.toLowerCase\(\) === 'x'/);
+  assert.deepEqual(validators.helpStop({ reason: 'tastatur' }), { reason: 'tastatur' });
+  assert.deepEqual(validators.helpStop(undefined), { reason: 'unbekannt' });
+  assert.throws(() => validators.helpStop({ reason: 'hack' }), /Grund/);
+  const events = [];
+  const help = createHelp({ emit: (t, p) => t === 'help:activity' && events.push(p.action), getRelay: () => null, hostName: 'pc.local', port: 0, bindHost: '127.0.0.1', lanAddresses: () => ['127.0.0.1'] });
+  await help.request();
+  help.stop({ reason: 'knopf' });
+  assert.ok(events.includes('Fernhilfe beendet (Knopf „Hilfe beenden“)'), events.join(' | '));
+});

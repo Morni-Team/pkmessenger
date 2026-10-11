@@ -5,7 +5,7 @@
 //  - „⚙️ Erweitert" (eingeklappt): Standard-Server / eigener Server / aus, Verbindung testen, kurze Anleitung.
 //  - „📱 Fernzugang fürs Handy" (eingeklappt).
 // Sicherheit wie bei der Fernhilfe: der Helfer sieht nur Einrichtung/Einstellungen, nie Chats; jede Kopplung wird am PC
-// bestätigt; Beenden jederzeit (auch Strg+C). Über den Server laufen nur Ende-zu-Ende-verschlüsselte Pakete.
+// bestätigt; Beenden jederzeit (auch Strg+Umschalt+X). Über den Server laufen nur Ende-zu-Ende-verschlüsselte Pakete.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import RemoteSection from './RemoteSection.jsx';
@@ -182,7 +182,7 @@ function HelpLinkCard({ toast }) {
       }
       if (!link) {
         toast?.({ kind: 'error', title: 'Kein Hilfelink möglich', text: 'Weder ein Server für außerhalb noch ein WLAN-Name ist verfügbar. Unter „Erweitert" einen Server wählen und testen.' });
-        await api.helpStop().catch(() => {});
+        await api.helpStop({ reason: 'kein-link' }).catch(() => {});
         return;
       }
       setInfo({ code: r.code, link, overRelay, expires: r.expires });
@@ -194,7 +194,7 @@ function HelpLinkCard({ toast }) {
     }
   };
   const stop = async () => {
-    await api.helpStop().catch(() => {});
+    await api.helpStop({ reason: 'knopf' }).catch(() => {});
     setInfo(null);
   };
 

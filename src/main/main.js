@@ -432,7 +432,7 @@ app.on('before-quit', (e) => {
     /* ignorieren */
   }
   remote.stop().catch(() => {});
-  try { help.stop(); } catch { /* egal */ }
+  try { help.stop({ reason: 'app' }); } catch { /* egal */ }
   try {
     voice.leave(); // sauber auflegen
   } catch {
