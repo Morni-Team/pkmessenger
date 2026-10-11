@@ -224,7 +224,18 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     'pk:help-test-relay': (p) => {
       const given = validators.helpRelay(p).url;
       const url = given || currentRelay() || '';
-      return relayTester ? relayTester.test(url) : { ok: false, steps: [{ name: 'Test', ok: false, detail: 'Nicht verfügbar.' }], ms: 0 };
+      if (!relayTester) return { ok: false, steps: [{ name: 'Test', ok: false, detail: 'Nicht verfügbar.' }], ms: 0 };
+      // Eigene Adresse eingetragen → nur diesen Server prüfen
+      if (given) return relayTester.test(url);
+      // #151: Standard → zuerst den kostenlosen Weg (Direktverbindung) prüfen, der Server ist nur Ersatz (optional)
+      return (async () => {
+        const { NOSTR_RELAYS } = require('../shared/p2p');
+        const { HELP_PAGE } = require('../shared/relay-config');
+        const direct = await relayTester.testDirect({ relays: NOSTR_RELAYS, page: HELP_PAGE });
+        const server = url ? await relayTester.test(url) : { ok: false, steps: [] };
+        const optional = server.steps.map((s) => ({ ...s, name: `Ersatz-Server (optional) – ${s.name}`, optional: true }));
+        return { ok: direct.ok, direct: true, serverOk: server.ok, steps: [...direct.steps, ...optional], ms: direct.ms + (server.ms || 0) };
+      })();
     },
     'pk:help-set-relay': (p) => {
       const v = validators.helpRelay(p);

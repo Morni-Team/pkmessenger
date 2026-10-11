@@ -18,11 +18,13 @@ function TestResult({ test }) {
   return (
     <ul className="support__test" aria-label="Ergebnis des Verbindungstests">
       {test.steps.map((s) => (
-        <li key={s.name} className={s.ok ? 'ok' : 'warn'}>
-          {s.ok ? '✅' : '❌'} <b>{s.name}:</b> {s.detail}
+        // #151: Der Ersatz-Server ist optional – ein Fehler dort ist kein Grund zur Sorge (gelb statt rot)
+        <li key={s.name} className={s.ok ? 'ok' : s.optional ? 'muted' : 'warn'}>
+          {s.ok ? '✅' : s.optional ? '➖' : '❌'} <b>{s.name}:</b> {s.detail}
         </li>
       ))}
       {test.ok && <li className="ok">🎉 Alles bereit – Hilfelinks gehen jetzt überall ({test.ms} ms).</li>}
+      {test.ok && test.direct && !test.serverOk && <li className="muted small">Der Ersatz-Server wird nur gebraucht, wenn weder direkt noch über die Vermittler eine Verbindung klappt – und für den Fernzugang fürs Handy.</li>}
     </ul>
   );
 }

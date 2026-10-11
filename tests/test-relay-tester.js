@@ -86,3 +86,22 @@ test('Ungültige Adresse → sofort abgelehnt, ohne Netz', async () => {
   assert.equal(called, false);
   assert.equal((await createRelayTester().test('')).ok, false);
 });
+
+test('#151 „Verbindung testen“: zuerst der kostenlose Weg (Vermittler + Helfer-Seite), Server nur optional', async () => {
+  const { EventEmitter } = require('node:events');
+  class WS extends EventEmitter {
+    constructor(url) {
+      super();
+      setImmediate(() => (url.includes('tot') ? this.emit('error', new Error('x')) : this.emit('open')));
+    }
+    close() {}
+  }
+  const fetchImpl = async (url) => ({ ok: url.includes('github.io'), status: url.includes('github.io') ? 200 : 502, json: async () => ({}) });
+  const t = createRelayTester({ fetchImpl, WebSocketImpl: WS });
+  const d = await t.testDirect({ relays: ['wss://a.example', 'wss://tot.example'], page: 'https://x.github.io/help/' });
+  assert.equal(d.ok, true);
+  assert.match(d.steps[0].detail, /1 von 2 erreichbar/);
+  const none = await t.testDirect({ relays: ['wss://tot.example'], page: 'https://x.github.io/help/' });
+  assert.equal(none.ok, false);
+  assert.match(none.steps[0].detail, /Firewall, ein VPN/);
+});
