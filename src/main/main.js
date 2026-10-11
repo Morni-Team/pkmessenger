@@ -179,7 +179,8 @@ const lanAddresses = () =>
     .sort((a, b) => Number(!a.startsWith('192.168.')) - Number(!b.startsWith('192.168.'))); // echtes WLAN vor virtuellen Adaptern (WSL/Hyper-V)
 // Selbst gehosteter Relay (Einstellungen → Hilfe & Tour): ein Relay für Fernzugang UND Fernhilfe (#104/#105)
 // Standard: Morni-Team-Server (nichts installieren); eigener Server oder aus unter Support → Erweitert (vibeworks #219)
-const { resolveRelay } = require('../shared/relay-config');
+const { resolveRelay, HELP_PAGE } = require('../shared/relay-config');
+const { createP2PBridge } = require('./p2p-bridge');
 const relayConfig = () => resolveRelay(store.get(), { demo: Boolean(demo) });
 const remoteRelayConfig = () => resolveRelay(store.get(), { demo: Boolean(demo), forRemote: true });
 const remote = createRemote({
@@ -221,6 +222,10 @@ const help = createHelp({
   naclPath: require.resolve('tweetnacl/nacl-fast.min.js'),
   // Relay-Adresse (für Fernhilfe außerhalb des WLANs): wss://<domain>/ws, selbst gehostet (relay/)
   getRelay: relayConfig,
+  // Direktverbindung (#143): Helfer ↔ PC direkt per WebRTC, Helfer-Seite auf GitHub Pages; Relay nur noch Rückfall.
+  // Im Demo-/Screenshot-Lauf aus (kein Netz).
+  p2p: demo || SHOTS_ARG ? null : createP2PBridge({ BrowserWindow, ipcMain, htmlPath: path.join(ROOT, 'build', 'p2p-host', 'index.html'), preloadPath: path.join(__dirname, '..', 'preload', 'p2p-preload.js'), logger }),
+  p2pPage: HELP_PAGE,
 });
 /** „Hilfe anfordern“: Einmal-Code + QR-Code (als Bild) für die Oberfläche */
 help.requestWithQr = async () => {

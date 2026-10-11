@@ -10,6 +10,10 @@
   var frag = new URLSearchParams(location.hash.slice(1));
   var room = frag.get('r');
   var relayMode = Boolean(room);
+  // vibeworks #219: p=1 → erst DIREKT verbinden (WebRTC, Vermittlung über öffentliche Nostr-Relays); h = Relay-Server als Rückfall
+  var p2pMode = frag.get('p') === '1' && typeof window.PKP2P === 'object';
+  var relayHost = /^[a-z0-9.-]+(:\d+)?$/i.test(frag.get('h') || '') ? frag.get('h') : null;
+  var direct = null; // offene Direktverbindung
   var key = null;
   try {
     var rawKey = atob((frag.get('c') || '').replace(/-/g, '+').replace(/_/g, '/'));
@@ -34,7 +38,7 @@
   var nextId = 1;
   function connectRelay() {
     return new Promise(function (resolve, reject) {
-      var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+      var url = relayHost ? 'wss://' + relayHost + '/ws' : (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
       ws = new WebSocket(url);
       ws.onopen = function () { ws.send(JSON.stringify({ room: room, role: 'guest' })); };
       ws.onmessage = function (ev) {
@@ -47,7 +51,25 @@
       setTimeout(function () { reject(new Error('Zeitüberschreitung.')); }, 8000);
     });
   }
+  // Erst direkt (kein Server dazwischen), sonst Relay-Server, sonst Fehler mit verständlichem Hinweis
+  function connectAny() {
+    if (!p2pMode) return relayMode ? connectRelay() : Promise.resolve();
+    msg.textContent = 'Suche den anderen PC …';
+    return window.PKP2P.connect({ key: key, timeoutMs: 20000, onState: function (s) { if (s === 'verbinde') msg.textContent = 'Verbinde direkt …'; } })
+      .then(function (c) {
+        direct = c;
+        c.onClose(function () { $('note').textContent = 'Verbindung getrennt.'; });
+        $('via').textContent = '🔒 Direkt verbunden – ohne Server dazwischen.';
+      })
+      .catch(function () {
+        if (!relayMode) throw new Error('Keine Verbindung möglich. Ist am anderen PC „Hilfe starten“ noch aktiv? Sonst: gleiches WLAN nutzen.');
+        msg.textContent = 'Direkt klappt nicht – verbinde über den Server …';
+        return connectRelay().then(function () { $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; });
+      });
+  }
+
   function send(path, body) {
+    if (direct) return direct.send(path, body);
     if (relayMode) {
       return new Promise(function (resolve) {
         var id = String(nextId++);
@@ -67,7 +89,7 @@
     var code = ($('code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length !== 6) { msg.textContent = 'Der Code hat 6 Zeichen.'; return; }
     msg.textContent = 'Verbinde …';
-    var ready = relayMode ? connectRelay() : Promise.resolve();
+    var ready = direct ? Promise.resolve() : connectAny();
     ready.then(function () {
       msg.textContent = 'Warte auf Bestätigung am anderen PC …';
       var sealed = seal({ name: $('name').value || 'Helfer', t: Date.now() });

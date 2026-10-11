@@ -153,7 +153,12 @@ function HelpLinkCard({ toast }) {
       const r = await api.helpRequest();
       let link = r?.url || null;
       let overRelay = false;
-      if (r?.relayUrl) {
+      // #143: Direktverbindung (Link auf GitHub Pages) geht ohne eigenen Server – sofort nutzen
+      const direct = typeof r?.relayUrl === 'string' && r.relayUrl.includes('#p=1');
+      if (direct) {
+        link = r.relayUrl;
+        overRelay = true;
+      } else if (r?.relayUrl) {
         // Wirklich mit dem Server verbunden? (sonst wäre der Link tot) – bis zu 6 s warten
         let s = null;
         for (let i = 0; i < 12; i++) {
@@ -191,7 +196,7 @@ function HelpLinkCard({ toast }) {
     setInfo(null);
   };
 
-  const where = !status ? '' : status.relayMode ? `🌍 Der Link geht überall (über ${status.relayMode === 'own' ? 'deinen Server' : 'den Server des Morni-Teams'}).` : '🏠 Der Link geht nur im selben WLAN (Server für außerhalb ist aus).';
+  const where = !status ? '' : status.relayMode ? `🌍 Der Link geht überall – direkt von Gerät zu Gerät, ohne Server dazwischen (Rückfall: ${status.relayMode === 'own' ? 'dein Server' : 'Server des Morni-Teams'}).` : '🏠 Der Link geht nur im selben WLAN (Hilfe von außerhalb ist aus).';
   return (
     <div className="settings__field support__link" data-setting="help-link">
       <span className="settings__label">🙋 Jemand soll mir helfen</span>

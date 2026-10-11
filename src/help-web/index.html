@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; img-src 'self' data:; base-uri 'none'; form-action 'none'" />
     <title>PKMessenger – Helfer</title>
     <style>
       :root {
@@ -52,10 +53,13 @@
         <div id="note" class="warn"></div>
         <div id="fields"></div>
         <p class="muted" id="control"></p>
+        <p class="muted" id="via"></p>
       </section>
     </main>
     <div id="cursor" class="hidden"></div>
-    <script src="/help/nacl.js"></script>
-    <script src="/help/app.js"></script>
+    <!-- relativ: läuft unter /help/ (PC, Relay) und auf GitHub Pages (/pkmessenger/help/) -->
+    <script src="nacl.js"></script>
+    <script src="p2p.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

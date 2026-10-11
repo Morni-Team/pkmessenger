@@ -8,6 +8,8 @@
 // Relay nur, wenn der Nutzer ihn BEWUSST gewählt hat – niemand landet ungefragt mit seinem Fernzugang auf einem Server.
 
 const DEFAULT_RELAY = 'wss://relay.morncloud.de/ws';
+// #143: Helfer-Seite für die Direktverbindung – kostenlos auf GitHub Pages, kein eigener Server nötig
+const HELP_PAGE = 'https://morni-team.github.io/pkmessenger/help/';
 const RELAY_MODES = ['standard', 'own', 'off'];
 const WSS = /^wss:\/\/[a-z0-9.-]+(:\d+)?(\/[\w./-]*)?$/i;
 
@@ -29,4 +31,4 @@ function resolveRelay(settings, { demo = false, forRemote = false } = {}) {
   return wss ? { wss, httpBase: httpBaseOf(wss), mode } : null;
 }
 
-module.exports = { DEFAULT_RELAY, RELAY_MODES, relaySetting, resolveRelay, httpBaseOf };
+module.exports = { DEFAULT_RELAY, HELP_PAGE, RELAY_MODES, relaySetting, resolveRelay, httpBaseOf };

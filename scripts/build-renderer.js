@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
+const { buildP2P } = require('./build-p2p');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src', 'renderer');
@@ -43,6 +44,7 @@ async function main() {
   } else {
     await esbuild.build(options);
   }
+  await buildP2P(); // Direktverbindung (vibeworks #219)
 }
 
 main().catch((err) => {
