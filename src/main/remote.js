@@ -437,6 +437,25 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
   let relayTimer = null;
   let relayUp = false;
   let relayTries = 0;
+  // #138: Ist der Relay dauerhaft kaputt, NICHT jede Minute dieselbe Warnung ins Protokoll schreiben:
+  // erster Fehler sofort, danach höchstens alle 30 Min. eine Sammelzeile; „wieder verbunden“ wird gemeldet.
+  let relayError = null; // { text, since, count, loggedAt }
+  const LOG_REPEAT_MS = 30 * 60 * 1000;
+  function relayFailed(err) {
+    const { explain } = require('./relay-test');
+    const text = explain(err);
+    const t = now();
+    if (!relayError || relayError.text !== text) {
+      relayError = { text, since: t, count: 1, loggedAt: t };
+      logger?.warn?.('remote', `relay: ${text} (${String(err?.message || err).slice(0, 120)})`);
+      return;
+    }
+    relayError.count += 1;
+    if (t - relayError.loggedAt >= LOG_REPEAT_MS) {
+      relayError.loggedAt = t;
+      logger?.warn?.('remote', `relay: weiterhin nicht erreichbar (${relayError.count} Versuche seit ${new Date(relayError.since).toLocaleTimeString('de-DE')}) – ${text}`);
+    }
+  }
   const loadWs = () => {
     if (WebSocketImpl) return WebSocketImpl;
     try {
@@ -455,7 +474,7 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
   }
   function relayStatus() {
     const r = getRelay();
-    return { configured: Boolean(r?.wss), connected: relayUp, base: r?.httpBase || null };
+    return { configured: Boolean(r?.wss), connected: relayUp, base: r?.httpBase || null, error: relayUp ? null : relayError?.text || null };
   }
   function stopRelay() {
     clearTimeout(relayTimer);
@@ -475,7 +494,8 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
     clearTimeout(relayTimer);
     relayTimer = null;
     if (!cfg().enabled || !getRelay()?.wss) return;
-    const delay = Math.min(60000, 2000 * 2 ** Math.min(relayTries, 5));
+    // 2 s … 60 s; nach vielen Fehlschlägen (Server dauerhaft kaputt) nur noch alle 10 Minuten
+    const delay = relayTries >= 12 ? 10 * 60000 : Math.min(60000, 2000 * 2 ** Math.min(relayTries, 5));
     relayTries += 1;
     relayTimer = setTimeoutImpl(() => {
       relayTimer = null;
@@ -492,7 +512,7 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
     try {
       ws = new WS(relay.wss);
     } catch (err) {
-      logger?.warn?.('remote', `relay: ${err?.message || err}`);
+      relayFailed(err);
       scheduleRelay();
       return;
     }
@@ -515,6 +535,8 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
       if (!m || typeof m !== 'object') return;
       if (m.relay) {
         if (m.relay === 'joined') {
+          if (relayError) logger?.info?.('remote', 'relay: wieder verbunden ✓');
+          relayError = null;
           relayUp = true;
           relayTries = 0;
         }
@@ -542,7 +564,7 @@ function createRemote({ service, validators, store, vault, emit = () => {}, logg
       relayUp = false;
       scheduleRelay();
     });
-    ws.on('error', (err) => logger?.warn?.('remote', `relay: ${err?.message || err}`));
+    ws.on('error', (err) => relayFailed(err));
   }
   /** Relay-Adresse geändert / neuer Raum → Verbindung neu aufbauen. */
   function refreshRelay() {

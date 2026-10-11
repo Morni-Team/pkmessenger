@@ -109,7 +109,7 @@ test('PC verbindet sich ausgehend als host in einen festen, zufälligen Raum; St
   assert.equal(join.role, 'host');
   assert.match(join.room, /^[A-Za-z0-9_-]{16,64}$/);
   assert.equal(ctx.data.remote.relayRoom, join.room); // Raum bleibt gleich (Geräte finden den PC wieder)
-  assert.deepEqual(ctx.remote.status().relay, { configured: true, connected: true, base: 'https://relay.test' });
+  assert.deepEqual(ctx.remote.status().relay, { configured: true, connected: true, base: 'https://relay.test', error: null });
   await ctx.remote.stop();
 });
 
@@ -204,7 +204,7 @@ test('Ohne Relay-Adresse: kein Relay, und ohne PC-Namen gibt es auch keinen Link
   await ctx.remote.setEnabled({ on: true });
   await tick();
   assert.equal(FakeWS.all.length, 0);
-  assert.deepEqual(ctx.remote.status().relay, { configured: false, connected: false, base: null });
+  assert.deepEqual(ctx.remote.status().relay, { configured: false, connected: false, base: null, error: null });
   assert.throws(() => ctx.remote.createPairing(), /taugt nicht/);
   await ctx.remote.stop();
 });
@@ -215,4 +215,53 @@ test('Validierung: Option „neuer Raum" nur als true, mindestens eine Option', 
   assert.throws(() => validators.remoteOptions({}));
   assert.throws(() => validators.remoteOptions({ newRoom: 'ja' }));
   assert.throws(() => validators.remoteOptions({ requireApproval: 'ja' }));
+});
+
+test('#138: Relay dauerhaft kaputt → Warnung nur einmal, dann höchstens alle 30 Min.; Abstand wächst bis 10 Min.; „wieder verbunden“', async () => {
+  FakeWS.all = [];
+  const logs = [];
+  const logger = { warn: (s, m) => logs.push(['warn', m]), info: (s, m) => logs.push(['info', m]), error() {} };
+  let t = 1_000_000;
+  const timers = [];
+  const data = { remote: { port: 0 } };
+  const store = { get: () => ({ ...data }), set: (k, v) => (data[k] = v) };
+  let raw = null;
+  const remote = createRemote({
+    service: { listGuilds: () => [], getStatus: () => ({ bot: null }) },
+    validators,
+    store,
+    vault: { get: () => raw, set: (v) => (raw = v), clear: () => (raw = null) },
+    logger,
+    now: () => t,
+    webDir: path.join(__dirname, '..', 'src', 'remote-web'),
+    naclPath: require.resolve('tweetnacl/nacl-fast.min.js'),
+    lanAddresses: () => ['127.0.0.1'],
+    bindHost: '127.0.0.1',
+    getRelay: () => ({ wss: 'wss://relay.test/ws', httpBase: 'https://relay.test' }),
+    WebSocketImpl: FakeWS,
+    setTimeoutImpl: (fn, ms) => {
+      const x = { fn, ms, unref() {} };
+      timers.push(x);
+      return x;
+    },
+  });
+  remote.setPassword({ password: 'geheim12345' });
+  await remote.setEnabled({ on: true });
+  const tlsErr = Object.assign(new Error('write EPROTO SSL alert number 80'), { code: 'EPROTO' });
+  for (let i = 0; i < 20; i += 1) {
+    last().emit('error', tlsErr);
+    last().drop();
+    t += 60_000;
+    timers.at(-1).fn(); // nächster Versuch
+  }
+  const warns = logs.filter((l) => l[0] === 'warn');
+  assert.ok(warns.length <= 2, `zu viele Warnungen: ${warns.length}`);
+  assert.match(warns[0][1], /HTTPS-Zertifikat/);
+  assert.equal(remote.status().relay.error.includes('Zertifikat'), true);
+  assert.equal(timers.at(-1).ms, 10 * 60000); // nach vielen Fehlschlägen nur noch alle 10 Minuten
+  // Server wieder da
+  last().deliver({ relay: 'joined', peer: false });
+  assert.ok(logs.some((l) => l[0] === 'info' && /wieder verbunden/.test(l[1])));
+  assert.equal(remote.status().relay.error, null);
+  await remote.stop();
 });
