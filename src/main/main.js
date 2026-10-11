@@ -80,6 +80,14 @@ function broadcast(type, payload) {
       /* KI-Manager noch nicht initialisiert */
     }
   }
+  // Bot-Module: Protokoll (bearbeitet/gelöscht) und Starboard (⭐-Reaktionen kommen als Update)
+  if (type === 'message:update' || type === 'message:delete') {
+    try {
+      (type === 'message:update' ? botModules.onUpdate(payload) : botModules.onDelete(payload)).catch(() => {});
+    } catch {
+      /* noch nicht initialisiert */
+    }
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('pk:event', { type, payload });
   }

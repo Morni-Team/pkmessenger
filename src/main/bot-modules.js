@@ -34,6 +34,35 @@ const CATALOG = [
     desc: 'Punkte fürs Schreiben (höchstens 1× pro Minute). „!rang“ zeigt den eigenen Stand, „!top“ die Bestenliste.',
     defaults: { announce: true },
   },
+  // #136/#131: weitere Module nach Vorbild Moin_Julia (ohne KI, ohne privilegierte Discord-Freigaben)
+  {
+    id: 'suggestions',
+    icon: '💡',
+    title: 'Vorschläge',
+    desc: 'In einem Vorschlags-Kanal bekommt jede Nachricht automatisch 👍 und 👎 – auf Wunsch mit eigenem Thread zum Diskutieren.',
+    defaults: { channelId: '', thread: true },
+  },
+  {
+    id: 'protection',
+    icon: '🛡',
+    title: 'Schutz',
+    desc: 'Löscht Einladungen zu fremden Servern, Massen-Pings und Spam. Admins sind ausgenommen. Auf Wunsch kurzer Timeout.',
+    defaults: { invites: true, massMentions: 5, spam: true, timeoutMinutes: 0, ignoreChannelIds: [] },
+  },
+  {
+    id: 'starboard',
+    icon: '🌟',
+    title: 'Starboard',
+    desc: 'Bekommt eine Nachricht genug ⭐-Reaktionen, landet sie im Bestenkanal.',
+    defaults: { channelId: '', threshold: 3 },
+  },
+  {
+    id: 'logging',
+    icon: '📝',
+    title: 'Protokoll',
+    desc: 'Schreibt gelöschte und bearbeitete Nachrichten in einen Protokoll-Kanal (nur für dein Team sichtbar machen!).',
+    defaults: { channelId: '', deletes: true, edits: true },
+  },
 ];
 const IDS = new Set(CATALOG.map((m) => m.id));
 
@@ -64,6 +93,27 @@ function checkConfig(moduleId, raw) {
     return { channelId };
   }
   if (moduleId === 'levels') return { announce: c.announce !== false };
+  const channel = (v) => {
+    const id = typeof v === 'string' ? v : '';
+    if (id && !SNOWFLAKE.test(id)) fail('Ungültiger Kanal.');
+    return id;
+  };
+  if (moduleId === 'suggestions') return { channelId: channel(c.channelId), thread: c.thread !== false };
+  if (moduleId === 'protection') {
+    const mass = c.massMentions === undefined ? 5 : c.massMentions;
+    if (!Number.isInteger(mass) || mass < 0 || mass > 50) fail('Massen-Pings: 0 (aus) bis 50.');
+    const minutes = c.timeoutMinutes === undefined ? 0 : c.timeoutMinutes;
+    if (![0, 1, 5, 10, 60].includes(minutes)) fail('Timeout: 0, 1, 5, 10 oder 60 Minuten.');
+    const ignore = Array.isArray(c.ignoreChannelIds) ? c.ignoreChannelIds : [];
+    if (ignore.length > 100) fail('Höchstens 100 Kanäle ausnehmen.');
+    return { invites: c.invites !== false, massMentions: mass, spam: c.spam !== false, timeoutMinutes: minutes, ignoreChannelIds: [...new Set(ignore.map(channel).filter(Boolean))] };
+  }
+  if (moduleId === 'starboard') {
+    const threshold = c.threshold === undefined ? 3 : c.threshold;
+    if (!Number.isInteger(threshold) || threshold < 1 || threshold > 50) fail('Sterne: 1 bis 50.');
+    return { channelId: channel(c.channelId), threshold };
+  }
+  if (moduleId === 'logging') return { channelId: channel(c.channelId), deletes: c.deletes !== false, edits: c.edits !== false };
   return fail('Unbekanntes Modul.');
 }
 
@@ -121,7 +171,7 @@ function createBotModules({ store, service, now = () => Date.now(), logger = nul
     return CATALOG.map((m) => {
       const st = stateOf(guildId, m.id);
       const d = data[guildId]?.[m.id] || {};
-      const info = m.id === 'counting' ? { current: d.current || 0, best: d.best || 0 } : m.id === 'levels' ? { people: Object.keys(d.xp || {}).length } : {};
+      const info = m.id === 'counting' ? { current: d.current || 0, best: d.best || 0 } : m.id === 'levels' ? { people: Object.keys(d.xp || {}).length } : m.id === 'starboard' ? { posted: Object.keys(d.posted || {}).length } : {};
       return { id: m.id, icon: m.icon, title: m.title, desc: m.desc, ...st, info };
     });
   }
@@ -226,17 +276,123 @@ function createBotModules({ store, service, now = () => Date.now(), logger = nul
     if (after > before && cfg.announce) await say(m, `🎉 ${nameOf(m)} ist jetzt **Level ${after}**!`);
   }
 
-  const HANDLERS = { autoreply, counting, levels };
+  async function suggestions(m, cfg) {
+    if (!cfg.channelId || m.channelId !== cfg.channelId || !String(m.content || '').trim()) return;
+    await react(m, '👍');
+    await react(m, '👎');
+    if (cfg.thread) {
+      const name = `💡 ${String(m.content).replace(/\s+/g, ' ').slice(0, 80)}`;
+      await Promise.resolve(service.createThread?.({ channelId: m.channelId, name, messageId: m.id })).catch(() => {});
+    }
+  }
+
+  // Schutz: Admins (und der Bot selbst) sind immer ausgenommen. Aktionen: Nachricht löschen, kurz erklären, optional Timeout.
+  const recentByUser = new Map(); // guild|user → [{ at, text }]
+  const INVITE = /(discord\.gg|discord(app)?\.com\/invite)\/[a-z0-9-]+/i;
+  async function protection(m, cfg) {
+    if (cfg.ignoreChannelIds.includes(m.channelId)) return;
+    const text = String(m.content || '');
+    let reason = null;
+    if (cfg.invites && INVITE.test(text)) reason = 'Einladungen zu anderen Servern sind hier nicht erlaubt';
+    const pings = (m.mentions?.users?.length || 0) + (m.mentions?.roles?.length || 0) + (m.mentions?.everyone ? 10 : 0);
+    if (!reason && cfg.massMentions > 0 && pings >= cfg.massMentions) reason = 'zu viele Erwähnungen auf einmal';
+    if (!reason && cfg.spam) {
+      const key = `${m.guildId}|${m.author.id}`;
+      const t = now();
+      const list = (recentByUser.get(key) || []).filter((x) => t - x.at < 10000);
+      list.push({ at: t, text: text.trim().toLowerCase() });
+      recentByUser.set(key, list);
+      const same = list.filter((x) => x.text && x.text === list.at(-1).text).length;
+      if (same >= 4 || list.length >= 8) reason = 'Spam (zu viele Nachrichten in kurzer Zeit)';
+    }
+    if (!reason) return;
+    const admin = await Promise.resolve(service.isServerAdmin?.({ guildId: m.guildId, userId: m.author.id })).catch(() => false);
+    if (admin) return;
+    await Promise.resolve(service.deleteMessage?.({ channelId: m.channelId, messageId: m.id })).catch((err) => logger?.warn?.('module', `Schutz: löschen ging nicht – ${err?.message || err}`));
+    cache.delete(m.id);
+    if (cfg.timeoutMinutes > 0) {
+      await Promise.resolve(service.timeoutMember?.({ guildId: m.guildId, userId: m.author.id, minutes: cfg.timeoutMinutes, reason: `Schutz-Modul: ${reason}` })).catch(() => {});
+    }
+    const key = `${m.guildId}|warn|${m.author.id}`;
+    if ((ruleCooldown.get(key) || 0) > now()) return 'removed'; // pro Person höchstens eine Erklärung pro Minute
+    ruleCooldown.set(key, now() + 60000);
+    if (mayReply(m.guildId)) {
+      await service.sendMessage({ channelId: m.channelId, content: `🛡 Nachricht von ${nameOf(m)} entfernt: ${reason}.${cfg.timeoutMinutes ? ` (${cfg.timeoutMinutes} Min. Timeout)` : ''}`, mentions: NO_MENTIONS, files: [], embeds: [], poll: null }).catch(() => {});
+    }
+    return 'removed';
+  }
+
+  const HANDLERS = { autoreply, counting, levels, suggestions, protection };
+
+  // ---- Bearbeiten / Löschen / Reaktionen (Protokoll, Starboard) ----
+  const cache = new Map(); // messageId → { guildId, channelId, author, content, at } – nur im Speicher, max. 3000
+  const remember = (m) => {
+    if (!m?.id || !m.guildId) return;
+    cache.set(m.id, { guildId: m.guildId, channelId: m.channelId, author: nameOf(m), content: String(m.content || '').slice(0, 1500), attachments: (m.attachments || []).length });
+    if (cache.size > 3000) cache.delete(cache.keys().next().value);
+  };
+  const enabled = (guildId, id) => allCfg()[guildId]?.[id]?.enabled === true;
+  async function logTo(guildId, text) {
+    const cfg = stateOf(guildId, 'logging').config;
+    if (!cfg.channelId || !mayReply(guildId)) return;
+    await service.sendMessage({ channelId: cfg.channelId, content: text.slice(0, 2000), mentions: NO_MENTIONS, files: [], embeds: [], poll: null }).catch(() => {});
+  }
+  const quote = (s) => (s ? s.split('\n').map((l) => `> ${l}`).join('\n') : '> *(kein Text)*');
+
+  /** Nachricht bearbeitet (oder Reaktion geändert – Discord meldet beides als Update). */
+  async function onUpdate(m) {
+    if (!m?.guildId || !SNOWFLAKE.test(String(m.guildId))) return;
+    try {
+      const before = cache.get(m.id);
+      if (enabled(m.guildId, 'logging') && before && !m.author?.bot && !m.isOwn && before.content !== String(m.content || '')) {
+        const cfg = stateOf(m.guildId, 'logging').config;
+        if (cfg.edits && m.channelId !== cfg.channelId) await logTo(m.guildId, `✏️ **${nameOf(m)}** hat in <#${m.channelId}> bearbeitet:\n**Vorher:**\n${quote(before.content)}\n**Nachher:**\n${quote(String(m.content || '').slice(0, 800))}`);
+      }
+      remember(m);
+      if (enabled(m.guildId, 'starboard')) {
+        const cfg = stateOf(m.guildId, 'starboard').config;
+        const stars = (m.reactions || []).find((r) => r.key === '⭐')?.count || 0;
+        const d = dataOf(m.guildId, 'starboard');
+        d.posted ||= {};
+        if (cfg.channelId && m.channelId !== cfg.channelId && stars >= cfg.threshold && !d.posted[m.id]) {
+          d.posted[m.id] = now();
+          const ids = Object.keys(d.posted);
+          if (ids.length > 2000) delete d.posted[ids[0]];
+          saveData();
+          const img = (m.attachments || []).find((a) => /^image\//.test(a.contentType || ''))?.url;
+          const link = `https://discord.com/channels/${m.guildId}/${m.channelId}/${m.id}`;
+          if (mayReply(m.guildId)) await service.sendMessage({ channelId: cfg.channelId, content: `⭐ **${stars}** · <#${m.channelId}> · **${nameOf(m)}**\n${quote(String(m.content || '').slice(0, 1500))}${img ? `\n${img}` : ''}\n${link}`, mentions: NO_MENTIONS, files: [], embeds: [], poll: null }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      logger?.warn?.('module', `update: ${err?.message || err}`);
+    }
+  }
+
+  /** Nachricht gelöscht – Inhalt kennen wir nur, wenn sie seit dem App-Start im Speicher war. */
+  async function onDelete({ id, channelId } = {}) {
+    const before = cache.get(id);
+    if (!before) return;
+    cache.delete(id);
+    if (!enabled(before.guildId, 'logging')) return;
+    const cfg = stateOf(before.guildId, 'logging').config;
+    if (!cfg.deletes || channelId === cfg.channelId) return;
+    await logTo(before.guildId, `🗑 Nachricht von **${before.author}** in <#${before.channelId}> gelöscht:\n${quote(before.content)}${before.attachments ? `\n📎 ${before.attachments} Anhang/Anhänge` : ''}`);
+  }
 
   /** Jede neue Nachricht (vom Hauptprozess durchgereicht). */
   async function onMessage(m) {
     if (!m?.guildId || !m.author?.id || m.author.bot || m.isOwn || m.system || !SNOWFLAKE.test(String(m.guildId))) return;
     const cfgs = allCfg()[m.guildId];
     if (!cfgs) return;
-    for (const id of IDS) {
-      if (cfgs[id]?.enabled !== true) continue;
+    // Protokoll: Inhalt nur merken, wenn das Modul an ist (sonst bleibt nichts im Speicher)
+    if (cfgs.logging?.enabled === true) remember(m);
+    // Schutz zuerst – wurde die Nachricht entfernt, reagieren die anderen Module nicht mehr darauf
+    const order = ['protection', ...[...IDS].filter((x) => x !== 'protection')];
+    for (const id of order) {
+      if (cfgs[id]?.enabled !== true || !HANDLERS[id]) continue;
       try {
-        await HANDLERS[id](m, stateOf(m.guildId, id).config);
+        if ((await HANDLERS[id](m, stateOf(m.guildId, id).config)) === 'removed') return;
       } catch (err) {
         logger?.warn?.('module', `${id}: ${err?.message || err}`);
       }
@@ -248,7 +404,7 @@ function createBotModules({ store, service, now = () => Date.now(), logger = nul
     store.set('botModuleData', data);
   }
 
-  return { list, set, reset, onMessage, flush, _data: () => data };
+  return { list, set, reset, onMessage, onUpdate, onDelete, flush, _data: () => data };
 }
 
 module.exports = { createBotModules, CATALOG, checkSet, levelOf };
