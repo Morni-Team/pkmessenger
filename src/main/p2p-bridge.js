@@ -21,7 +21,7 @@ function checkRequest(p) {
   return { path: p.path, body };
 }
 
-const STATES = new Set(['suche', 'angeboten', 'verbunden', 'getrennt', 'new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'bereit']);
+const STATES = new Set(['suche', 'angeboten', 'verbunden', 'getrennt', 'new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'bereit', 'vermittler']);
 
 /**
  * @param {object} o

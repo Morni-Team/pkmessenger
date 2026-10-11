@@ -55,14 +55,15 @@
   function connectAny() {
     if (!p2pMode) return relayMode ? connectRelay() : Promise.resolve();
     msg.textContent = 'Suche den anderen PC …';
-    return window.PKP2P.connect({ key: key, timeoutMs: 20000, onState: function (s) { if (s === 'verbinde') msg.textContent = 'Verbinde direkt …'; } })
+    return window.PKP2P.connect({ key: key, timeoutMs: 20000, onState: function (s) { if (s === 'verbinde') msg.textContent = 'PC gefunden – verbinde direkt …'; if (s === 'vermittler') msg.textContent = 'Direkt geht nicht (VPN/Netz) – nutze die Vermittler …'; } })
       .then(function (c) {
         direct = c;
         c.onClose(function () { $('note').textContent = 'Verbindung getrennt.'; });
-        $('via').textContent = '🔒 Direkt verbunden – ohne Server dazwischen.';
+        // #148: kein Direktweg (VPN, strenges Netz) → über die Vermittler, etwas langsamer
+        $('via').textContent = c.mode === 'vermittler' ? '🔒 Über öffentliche Vermittler verbunden (verschlüsselt, etwas langsamer).' : '🔒 Direkt verbunden – ohne Server dazwischen.';
       })
-      .catch(function () {
-        if (!relayMode) throw new Error('Keine Verbindung möglich. Ist am anderen PC „Hilfe starten“ noch aktiv? Sonst: gleiches WLAN nutzen.');
+      .catch(function (e) {
+        if (!relayMode) throw new Error((e && e.message) || 'Keine Verbindung möglich. Ist am anderen PC „Hilfe starten“ noch aktiv? Sonst: gleiches WLAN nutzen.');
         msg.textContent = 'Direkt klappt nicht – verbinde über den Server …';
         return connectRelay().then(function () { $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; });
       });
@@ -133,7 +134,7 @@
       var cur = $('cursor');
       if (v.cursor) { show(cur, true); cur.style.left = (v.cursor.x - 8) + 'px'; cur.style.top = (v.cursor.y - 8) + 'px'; }
       else show(cur, false);
-      setTimeout(loop, 900);
+      setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); // über die Vermittler seltener abfragen
     }).catch(function () { $('note').textContent = 'Verbindung verloren.'; });
   }
 })();
