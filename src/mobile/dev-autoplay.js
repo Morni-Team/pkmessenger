@@ -14,6 +14,21 @@ window.addEventListener('unhandledrejection', (e) => log(`FEHLER ${e.reason?.mes
   } catch {
     /* egal */
   }
+  // #160: Datenschutz beim ersten Start – wie ein Mensch bis unten lesen und zustimmen (testet die Abfrage gleich mit)
+  for (let i = 0; i < 20 && !$('.privacy'); i++) await wait(250);
+  if ($('.privacy')) {
+    const box = $('.privacy__text');
+    if (box) {
+      box.scrollTop = box.scrollHeight;
+      box.dispatchEvent(new Event('scroll'));
+    }
+    await wait(300);
+    const btn = $('.privacy .btn--primary');
+    results.datenschutz = btn && !btn.disabled ? 'ok' : 'Knopf gesperrt';
+    btn?.click();
+    log(`Datenschutz: ${results.datenschutz}`);
+    await wait(800);
+  }
   // Schritt 1 (CI-Bild 1): Chatliste – warten, bis verbunden und Chats da sind (Emulator ist unterschiedlich schnell)
   // Nur echte Zeilen zählen: beim Laden stehen kurz Platzhalter (.chatrow--skeleton) da (Lauf 37755403447)
   const realRows = () => document.querySelectorAll('.chatrow:not(.chatrow--skeleton)').length;
