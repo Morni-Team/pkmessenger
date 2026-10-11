@@ -248,6 +248,17 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
         key,
         async (p, body) => (await rpc(p, body, { ip: 'direkt' })).obj,
         (st) => {
+          // #148: Diagnose – Anzahl erreichbarer Vermittler nur protokollieren, kein eigener Zustand
+          if (/^relays:\d+$/.test(st)) {
+            const n = Number(st.split(':')[1]);
+            if (n > 0) log(`Direktverbindung bereit – ${n} Vermittler erreichbar`);
+            else {
+              log('Direktverbindung: KEIN Vermittler erreichbar (Firewall, VPN oder Virenscanner blockiert?)');
+              logger?.warn?.('help', 'p2p: keine Nostr-Vermittler erreichbar');
+            }
+            emitStatus();
+            return;
+          }
           const was = p2pState;
           p2pState = st;
           if (st === 'verbunden' && was !== st) log('Helfer direkt verbunden');

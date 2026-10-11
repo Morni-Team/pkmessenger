@@ -55,7 +55,19 @@
   function connectAny() {
     if (!p2pMode) return relayMode ? connectRelay() : Promise.resolve();
     msg.textContent = 'Suche den anderen PC …';
-    return window.PKP2P.connect({ key: key, timeoutMs: 20000, onState: function (s) { if (s === 'verbinde') msg.textContent = 'PC gefunden – verbinde direkt …'; if (s === 'vermittler') msg.textContent = 'Direkt geht nicht (VPN/Netz) – nutze die Vermittler …'; } })
+    var relays = null; // #148: Diagnose – erreichbare Vermittler
+    return window.PKP2P.connect({
+      key: key,
+      timeoutMs: 20000,
+      onState: function (s) {
+        if (s === 'verbinde') msg.textContent = 'PC gefunden – verbinde direkt …';
+        if (s === 'vermittler') msg.textContent = 'Direkt geht nicht (VPN/Netz) – nutze die Vermittler …';
+        if (/^relays:\d+$/.test(s)) {
+          relays = Number(s.split(':')[1]);
+          $('via').textContent = relays ? 'Vermittler erreichbar: ' + relays + ' – suche den PC …' : '⚠ Kein Vermittler erreichbar – blockiert ein VPN, eine Firewall oder ein Werbeblocker WebSockets?';
+        }
+      },
+    })
       .then(function (c) {
         direct = c;
         c.onClose(function () { $('note').textContent = 'Verbindung getrennt.'; });
@@ -64,8 +76,14 @@
       })
       .catch(function (e) {
         if (!relayMode) throw new Error((e && e.message) || 'Keine Verbindung möglich. Ist am anderen PC „Hilfe starten“ noch aktiv? Sonst: gleiches WLAN nutzen.');
-        msg.textContent = 'Direkt klappt nicht – verbinde über den Server …';
-        return connectRelay().then(function () { $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; });
+        var why = (e && e.message) || 'Direktverbindung nicht möglich.';
+        msg.textContent = why + ' Versuche den Server …';
+        return connectRelay()
+          .then(function () { $('via').textContent = '🔒 Über den Server verbunden (Ende-zu-Ende verschlüsselt).'; })
+          .catch(function () {
+            // #148: beide Wege gescheitert → den eigentlichen Grund zeigen, nicht nur „Server nicht erreichbar“
+            throw new Error(why + (relays === 0 ? ' (Kein Vermittler erreichbar – VPN/Firewall/Werbeblocker prüfen.)' : '') + ' Der Ersatz-Server ist auch nicht erreichbar.');
+          });
       });
   }
 
