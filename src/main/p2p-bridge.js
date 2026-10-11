@@ -45,7 +45,7 @@ function createP2PBridge({ BrowserWindow, ipcMain, htmlPath, preloadPath, logger
     return onRequest(req.path, req.body);
   });
   ipcMain.on('pk:p2p-state', (event, s) => {
-    if (!fromWin(event) || !(STATES.has(s) || /^relays:\d{1,2}$/.test(s))) return;
+    if (!fromWin(event) || !(STATES.has(s) || /^relays:\d{1,2}$/.test(s) || /^uhr:-?\d{1,4}$/.test(s))) return;
     state = s;
     onStateCb(s);
   });

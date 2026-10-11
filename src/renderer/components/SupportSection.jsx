@@ -237,9 +237,41 @@ function HelpLinkCard({ toast }) {
               ■ Hilfe beenden
             </button>
           </div>
+          <HelpLiveLog />
         </>
       )}
     </div>
+  );
+}
+
+// #152: Was passiert gerade? Protokoll der Fernhilfe live (Vermittler, Helfer gefunden, direkt verbunden …) – zum Kopieren
+function HelpLiveLog() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .helpStatus()
+        .then((s) => alive && setItems(Array.isArray(s?.activity) ? s.activity.slice(0, 8) : []))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 2500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  if (!items.length) return null;
+  const time = (at) => new Date(at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const text = items.map((e) => `${time(e.at)}  ${e.action}`).join('\n');
+  return (
+    <details className="support__log" open>
+      <summary className="muted small">📋 Was passiert gerade?</summary>
+      <pre className="muted small">{text}</pre>
+      <button className="btn btn--ghost btn--small" onClick={() => api.copyText({ text: `PKMessenger Fernhilfe-Protokoll (PC)\n${text}` }).catch(() => {})}>
+        Protokoll kopieren
+      </button>
+    </details>
   );
 }
 

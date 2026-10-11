@@ -5029,3 +5029,13 @@ body.help-active .chat {
   border: 1px solid color-mix(in srgb, var(--danger, #f87171) 50%, var(--line));
   background: color-mix(in srgb, var(--danger, #f87171) 8%, var(--panel-2));
 }
+
+/* ---------- Fernhilfe: Live-Protokoll (#152) ---------- */
+.support__log {
+  margin-top: 8px;
+}
+.support__log pre {
+  white-space: pre-wrap;
+  margin: 6px 0;
+  font-size: 12px;
+}
