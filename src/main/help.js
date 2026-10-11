@@ -21,7 +21,8 @@ const { redactView, allowHelperAction } = require('../shared/help-redact');
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 60 * 60 * 1000;
-const CLOCK_SKEW_MS = 2 * 60 * 1000;
+// #152: Uhren von PC und Helfer-Gerät gehen oft ein paar Minuten auseinander. Wiederholungen verhindern die Nonces.
+const CLOCK_SKEW_MS = 15 * 60 * 1000;
 const APPROVAL_TIMEOUT_MS = 90 * 1000;
 const RATE_PER_MIN = 240;
 const MAX_BODY = 32 * 1024;
@@ -249,6 +250,11 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
         async (p, body) => (await rpc(p, body, { ip: 'direkt' })).obj,
         (st) => {
           // #148: Diagnose – Anzahl erreichbarer Vermittler nur protokollieren, kein eigener Zustand
+          if (/^uhr:-?\d+$/.test(st)) {
+            const min = Number(st.split(':')[1]);
+            log(`Hinweis: Die Uhr des Helfer-Geräts weicht um ${Math.abs(min)} Min. von diesem PC ab – bei großen Abweichungen Uhrzeit automatisch stellen lassen`);
+            return;
+          }
           if (/^relays:\d+$/.test(st)) {
             const n = Number(st.split(':')[1]);
             if (n > 0) log(`Direktverbindung bereit – ${n} Vermittler erreichbar`);

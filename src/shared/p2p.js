@@ -20,6 +20,9 @@ const MAX_SIGNAL = 48 * 1024; // auch Hilfe-Antworten im Rückfall „über die 
 const MAX_FRAME = 64 * 1024;
 const HELLO_EVERY_MS = 3000;
 const ICE_WAIT_MS = 3000;
+// #152: Uhren von PC und Helfer-Gerät gehen oft ein paar Minuten auseinander → großzügig sein (Wiederholungen
+// werden trotzdem über die Ereignis-IDs verworfen, und ohne den Link-Schlüssel kann niemand etwas schicken)
+const CLOCK_SKEW_MS = 30 * 60 * 1000;
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -95,7 +98,7 @@ function createSignal({ key, role, onSignal, relays = NOSTR_RELAYS, WebSocketImp
     sockets.push(ws);
     ws.onopen = () => {
       try {
-        ws.send(JSON.stringify(['REQ', subId, { kinds: [KIND], '#t': [topic], since: Math.floor(now() / 1000) - 60 }]));
+        ws.send(JSON.stringify(['REQ', subId, { kinds: [KIND], '#t': [topic], since: Math.floor((now() - CLOCK_SKEW_MS) / 1000) }]));
       } catch {
         /* Relay weg – die anderen reichen */
       }
@@ -114,7 +117,7 @@ function createSignal({ key, role, onSignal, relays = NOSTR_RELAYS, WebSocketImp
       seen.add(e.id);
       const msg = unseal(e.content, key); // nur wer den Schlüssel hat, kann etwas schicken
       if (!msg || msg.from === role || typeof msg.type !== 'string') return;
-      if (typeof msg.t !== 'number' || Math.abs(now() - msg.t) > 2 * 60 * 1000) return;
+      if (typeof msg.t !== 'number' || Math.abs(now() - msg.t) > CLOCK_SKEW_MS) return;
       onSignal(msg);
     };
     ws.onerror = () => {};
@@ -171,6 +174,7 @@ function createP2PHost({ key, onRequest, onState = () => {}, RTC = globalThis.RT
   let pc = null;
   let peerSid = null;
   let busy = false;
+  let skewReported = null;
   let tunnelSid = null; // #148: Helfer, der über die Vermittler (ohne Direktverbindung) arbeitet
   const seenRpc = new Set();
   const signal = createSignal({ key, role: 'host', onSignal: handle, ...signalOpts });
@@ -197,6 +201,12 @@ function createP2PHost({ key, onRequest, onState = () => {}, RTC = globalThis.RT
       return;
     }
     if (msg.type === 'hello' && typeof msg.sid === 'string' && msg.sid.length <= 40) {
+      // #152: Diagnose – weicht die Uhr des Helfer-Geräts stark ab? (einmal pro Helfer melden)
+      const skew = Math.round((Date.now() - msg.t) / 60000);
+      if (Math.abs(skew) >= 2 && msg.sid !== skewReported) {
+        skewReported = msg.sid;
+        onState(`uhr:${Math.max(-9999, Math.min(9999, skew))}`);
+      }
       if (busy && msg.sid !== peerSid) return; // nur ein Helfer gleichzeitig
       if (busy) return;
       busy = true;

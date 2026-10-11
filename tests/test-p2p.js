@@ -266,3 +266,16 @@ test('#152 Pages-Seite: Direktverbindung steckt in app.js (kein eigenes p2p.js, 
   assert.match(app, /PKP2P/);
   assert.ok(app.indexOf('window.PKP2P') < app.indexOf('Verbindungs-Verlauf') || !app.includes('Verbindungs-Verlauf')); // P2P-Code vor der Seitenlogik
 });
+
+test('#152 Uhr des Helfer-Geräts geht 5 Min. falsch → verbindet trotzdem, PC meldet die Abweichung', async () => {
+  const key = nacl.randomBytes(32);
+  const { FakeWS } = fakeNostr();
+  const RTC = fakeRtc();
+  const states = [];
+  const host = createP2PHost({ key, RTC, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS }, onRequest: async () => ({ ok: true }), onState: (s) => states.push(s) });
+  const conn = await connectP2P({ key, RTC, timeoutMs: 8000, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS, now: () => Date.now() - 5 * 60 * 1000 } });
+  assert.deepEqual(await conn.send('/view', {}), { ok: true });
+  assert.ok(states.includes('uhr:5'), states.join(','));
+  conn.close();
+  host.close();
+});
