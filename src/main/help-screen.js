@@ -58,10 +58,22 @@ function rectsToHide(v) {
  * Bild für den Helfer aufnehmen. capture() → Promise<nativeImage>; nativeImage = Electron-Modul (createFromBitmap).
  * @returns {Promise<{ img: string, w: number, h: number } | null>}
  */
-async function captureForHelper({ view, capture, nativeImage, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY }) {
-  const v = redactView(view);
+const sameRect = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) < 0.003);
+
+async function captureForHelper({ view, capture, nativeImage, freshView = null, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY }) {
+  // #164: Wenn möglich die AKTUELLE Ansicht direkt vor und nach der Aufnahme nehmen (nicht die bis zu 700 ms alte).
+  // Passen vorher/nachher nicht zusammen (z. B. Einstellungen werden gerade geschlossen), wird das Bild verworfen.
+  const before = freshView ? await freshView().catch(() => null) : view;
+  if (freshView && !before) return null;
+  let v = redactView(before);
   if (v.hidden || !v.allowed) return null; // Chat-Bereich oder unbekannt: kein Bild
   const img = await capture();
+  if (freshView) {
+    const after = redactView(await freshView().catch(() => null));
+    if (after.hidden || after.screen !== v.screen || !sameRect(after.allowed, v.allowed)) return null;
+    // geschwärzt wird beides: private Stellen von vorher UND nachher
+    v = { ...v, masks: [...(v.masks || []), ...(after.masks || [])], fields: [...(v.fields || []), ...(after.fields || [])] };
+  }
   if (!img || img.isEmpty?.()) return null;
   const { width, height } = img.getSize();
   const bmp = img.toBitmap();
@@ -74,4 +86,4 @@ async function captureForHelper({ view, capture, nativeImage, maxWidth = MAX_WID
   return { img: `data:image/jpeg;base64,${jpeg.toString('base64')}`, w: size.width, h: size.height };
 }
 
-module.exports = { captureForHelper, maskBitmap, rectsToHide, outside, toPixels };
+module.exports = { captureForHelper, maskBitmap, rectsToHide, outside, toPixels, sameRect };

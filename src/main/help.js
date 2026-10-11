@@ -218,15 +218,17 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       if (!captureScreen) return { code: 200, obj: seal({ screen: null }, session.key) };
       // #161: schneller – höchstens alle 250 ms neu aufnehmen, und unverändertes Bild NICHT erneut schicken
       // (der Helfer nennt die Nummer seines Bildes; gleich → nur „same“ statt ~50 KB)
-      if (!lastShot || now() - lastShot.at > 250) {
+      // #44: über die Vermittler (VPN, strenge Netze) ein kleines Bild, das in eine Vermittler-Nachricht passt
+      const small = data.small === true;
+      if (!lastShot || lastShot.small !== small || now() - lastShot.at > 250) {
         let shot = null;
         try {
-          shot = await captureScreen(getView());
+          shot = await captureScreen(getView(), { small });
         } catch (err) {
           logger?.warn?.('help', `Bild: ${err?.message || err}`);
         }
         const same = shot && lastShot?.shot && shot.img === lastShot.shot.img;
-        lastShot = { at: now(), shot, id: same ? lastShot.id : (lastShot?.id || 0) + 1 };
+        lastShot = { at: now(), shot, small, id: same ? lastShot.id : (lastShot?.id || 0) + 1 };
       }
       if (lastShot.shot && data.have === lastShot.id) return { code: 200, obj: seal({ screen: { same: true, id: lastShot.id } }, session.key) };
       return { code: 200, obj: seal({ screen: lastShot.shot ? { ...lastShot.shot, id: lastShot.id } : null }, session.key) };

@@ -25,7 +25,7 @@ const typeInto = (selector, text) => `(() => {
 
 const key = (k, opts = {}) => `window.dispatchEvent(new KeyboardEvent('keydown', ${JSON.stringify({ key: k, bubbles: true, ...opts })}))`;
 
-async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = null }) {
+async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = null, helpRequest = null }) {
   fs.mkdirSync(dir, { recursive: true });
   await wait(3500);
   if (!demo) {
@@ -1210,6 +1210,46 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
       const shot = await captureHelp();
       if (shot?.img) require('node:fs').writeFileSync(require('node:path').join(dir, '89-helfer-bild.jpg'), Buffer.from(shot.img.split(',')[1], 'base64'));
       console.log(`[helfer-bild] ${shot ? `${shot.w}x${shot.h}, ${Math.round(shot.img.length / 1024)} KB` : 'kein Bild'}`);
+      const small = await captureHelp(true); // #44: Bild für den Weg über die Vermittler
+      console.log(`[helfer-bild-klein] ${small ? `${small.w}x${small.h}, ${Math.round(small.img.length / 1024)} KB` : 'kein Bild'}`);
+      // #164/#44: ECHTER Ablauf mit Helfer-Fenster (Link öffnen, Code, Zulassen, Bild, Klick, Maus, Chat, Zeichnen)
+      try {
+        const { BrowserWindow: BW } = require('electron');
+        const req = await helpRequest(); // frischer Einmal-Code (wie „Hilfe starten“)
+        const link = req.url;
+        const code = req.code;
+        const helper = new BW({ show: false, width: 1300, height: 900 });
+        await helper.loadURL(link);
+        const hjs = (c) => helper.webContents.executeJavaScript(c);
+        await wait(800);
+        await hjs(`document.getElementById('name').value='Alex'; document.getElementById('code').value=${JSON.stringify(code)}; document.getElementById('go').click();`);
+        for (let i = 0; i < 20 && !(await js(win, `Boolean([...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen'))`)); i++) await wait(250);
+        await js(win, `[...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen')?.click()`);
+        for (let i = 0; i < 30 && !(await hjs(`!document.getElementById('shotwrap').classList.contains('hidden') && document.getElementById('shot').naturalWidth > 0`)); i++) await wait(300);
+        const r = {};
+        r.bild = await hjs(`document.getElementById('shot').naturalWidth + 'x' + document.getElementById('shot').naturalHeight`);
+        r.steuern = await hjs(`document.getElementById('control').textContent`);
+        // Klick ins Bild auf „Leistung“ (Feld per Beschriftung suchen, Mitte des Rechtecks treffen)
+        const ziel = await hjs(`(() => { const f = (window.__lastViewForTest || null); return null; })()`);
+        r.klick = await hjs(`(() => { const img = document.getElementById('shot'); const b = img.getBoundingClientRect(); const ev = (t, fx, fy) => img.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: b.left + b.width * fx, clientY: b.top + b.height * fy })); ev('mousemove', 0.5, 0.5); return 'ok'; })()`);
+        await wait(700);
+        r.mausBeimNutzer = await js(win, `[...document.querySelectorAll('div')].some((d) => d.textContent.startsWith('👆') && d.textContent.includes('Alex'))`);
+        await hjs(`document.getElementById('hchatin').value='Hallo vom Helfer'; document.getElementById('hchatsend').click();`);
+        await wait(900);
+        await js(win, `document.querySelector('.help-chat__bubble')?.click()`);
+        await wait(400);
+        r.chatBeimNutzer = await js(win, `[...document.querySelectorAll('.help-chat__msg')].map((m) => m.textContent).join('|')`);
+        r.chatBeiHelfer = await hjs(`[...document.querySelectorAll('#hchatlog p')].map((p) => p.className + ':' + p.textContent).join('|')`);
+        await hjs(`document.getElementById('drawmode').click(); (() => { const img = document.getElementById('shot'); const b = img.getBoundingClientRect(); const ev = (t, fx, fy, tgt) => (tgt || img).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: b.left + b.width * fx, clientY: b.top + b.height * fy })); ev('mousedown', 0.3, 0.3); ev('mousemove', 0.4, 0.35); ev('mousemove', 0.5, 0.4); ev('mouseup', 0.5, 0.4, window); })(); document.getElementById('drawmode').click();`);
+        await wait(900);
+        r.zeichnungBeimNutzer = await js(win, `document.querySelectorAll('.help-draw polyline').length`);
+        await wait(600);
+        fs.writeFileSync(path.join(dir, '89d-helfer-seite.png'), (await helper.webContents.capturePage()).toPNG());
+        console.log(`[helfer-echt] ${JSON.stringify(r)}`);
+        helper.destroy();
+      } catch (e) {
+        console.log(`[helfer-echt] Fehler: ${e.message}`);
+      }
       // #160: so sieht der Nutzer eine Zeichnung des Helfers und den Hilfe-Chat
       await js(win, `window.dispatchEvent(new CustomEvent('help:draw', { detail: { type: 'draw', points: [[0.3, 0.35], [0.36, 0.42], [0.45, 0.44], [0.55, 0.4]] } }))`);
       await js(win, `document.querySelector('.help-chat__bubble')?.click()`);

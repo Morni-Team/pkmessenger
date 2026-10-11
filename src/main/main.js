@@ -228,7 +228,10 @@ const help = createHelp({
   p2p: demo || SHOTS_ARG ? null : createP2PBridge({ BrowserWindow, ipcMain, htmlPath: path.join(ROOT, 'build', 'p2p-host', 'index.html'), preloadPath: path.join(__dirname, '..', 'preload', 'p2p-preload.js'), logger }),
   p2pPage: HELP_PAGE,
   // #158: echtes Bild der App für den Helfer – Chats & Geheimnisse werden in help-screen.js geschwärzt
-  captureScreen: (view) => (mainWindow && !mainWindow.isDestroyed() ? captureForHelper({ view, capture: () => mainWindow.webContents.capturePage(), nativeImage }) : null),
+  captureScreen: (view, { small = false } = {}) =>
+    mainWindow && !mainWindow.isDestroyed()
+      ? captureForHelper({ view, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
+      : null,
 });
 /** „Hilfe anfordern“: Einmal-Code + QR-Code (als Bild) für die Oberfläche */
 help.requestWithQr = async () => {
@@ -370,7 +373,7 @@ function createWindow() {
     const dir = path.resolve(SHOTS_ARG.split('=')[1]);
     mainWindow.webContents.once('did-finish-load', () => {
       require('./screenshots')
-        .runScreenshots(mainWindow, dir, { demo: DEMO, stats: demo?.stats, simulate: demo?.simulate, captureHelp: () => captureForHelper({ view: latestHelpView, capture: () => mainWindow.webContents.capturePage(), nativeImage }) })
+        .runScreenshots(mainWindow, dir, { demo: DEMO, stats: demo?.stats, simulate: demo?.simulate, helpRequest: () => help.request(), captureHelp: (small = false) => captureForHelper({ view: latestHelpView, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) }) })
         .catch((e) => console.error('[screenshots] Fehler:', e))
         .finally(() => app.quit());
     });

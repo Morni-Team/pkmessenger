@@ -181,13 +181,13 @@
       renderChat(out.chat);
       canControl = Boolean(out.control);
       // #158: echtes Bild der App holen (nicht über die Vermittler – zu groß dafür)
-      var wantShot = out.screen && !v.hidden && !(direct && direct.mode === 'vermittler');
+      var wantShot = out.screen && !v.hidden;
       var next = function () { setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); };
       if (!wantShot) {
         shotWanted = false;
         show($('shotwrap'), false);
         $('fieldlist').open = true;
-        $('shothint').textContent = v.hidden ? '' : direct && direct.mode === 'vermittler' ? 'Über die Vermittler gibt es nur die Knopf-Liste (Bild wäre zu groß).' : '';
+        $('shothint').textContent = '';
         placeCursor(v);
         return next();
       }
@@ -203,9 +203,10 @@
   var shotLoopRunning = false;
   var shotId = 0;
   function shotLoop() {
-    if (!shotWanted || (direct && direct.mode === 'vermittler')) { shotLoopRunning = false; return; }
+    if (!shotWanted) { shotLoopRunning = false; return; }
+    var viaRelays = direct && direct.mode === 'vermittler'; // #44: kleines Bild über die Vermittler
     shotLoopRunning = true;
-    call('/screen', { have: shotId }).then(function (r) {
+    call('/screen', { have: shotId, small: Boolean(viaRelays) }).then(function (r) {
       var shot = r && r.screen;
       if (shot && shot.same) {
         /* unverändert – nichts zu tun */
@@ -219,8 +220,8 @@
         show($('shotwrap'), false);
         shotWanted = false;
       }
-      setTimeout(shotLoop, 350);
-    }, function () { setTimeout(shotLoop, 1000); });
+      setTimeout(shotLoop, viaRelays ? 1500 : 350);
+    }, function () { setTimeout(shotLoop, 1500); });
   }
 
   // #158: Maus des Nutzers auf dem Bild anzeigen (Anteil 0…1 → Prozent – passt bei jeder Bildgröße)

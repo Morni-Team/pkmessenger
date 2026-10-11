@@ -222,3 +222,25 @@ test('#160 Zusammenfassung nach der Hilfe: Klicks mit Beschriftung, nie eingegeb
   help.stop();
   assert.equal(events.filter(([t]) => t === 'help:summary').length, 1); // nicht doppelt
 });
+
+test('#164 Einstellungen werden gerade geschlossen → Bild wird verworfen (Helfer sieht nie kurz die Chats)', async () => {
+  const settings = { screen: 'settings', allowed: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }, fields: [] };
+  const run = async (seq) => {
+    let i = 0;
+    let captured = 0;
+    const out = await captureForHelper({ view: settings, capture: async () => ((captured += 1), fakeImage(20, 20)), nativeImage: fakeNative, freshView: async () => seq[Math.min(i++, seq.length - 1)] });
+    return { out, captured };
+  };
+  // vorher Einstellungen, nachher Chat-Bereich → verworfen
+  assert.equal((await run([settings, { screen: 'workspace' }])).out, null);
+  // vorher Einstellungen, nachher anderes Fenster/andere Größe → verworfen
+  assert.equal((await run([settings, { ...settings, allowed: { x: 0.1, y: 0.1, w: 0.6, h: 0.6 } }])).out, null);
+  // Fenster blendet gerade aus (kein erlaubter Bereich) → gar nicht erst aufnehmen
+  const fading = await run([{ ...settings, allowed: null }]);
+  assert.equal(fading.out, null);
+  assert.equal(fading.captured, 0);
+  // Renderer antwortet nicht → kein Bild
+  assert.equal(await captureForHelper({ view: settings, capture: async () => fakeImage(20, 20), nativeImage: fakeNative, freshView: async () => null }), null);
+  // vorher = nachher → Bild ok
+  assert.ok((await run([settings, settings])).out?.img);
+});
