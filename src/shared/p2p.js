@@ -13,7 +13,7 @@ const { schnorr } = require('@noble/curves/secp256k1');
 const { sha256 } = require('@noble/hashes/sha256');
 const { bytesToHex } = require('@noble/hashes/utils');
 
-const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.snort.social', 'wss://nostr.mom'];
+const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.snort.social', 'wss://nostr.mom', 'wss://offchain.pub', 'wss://nostr.oxtr.dev'];
 const KIND = 25097; // ephemer: wird nicht gespeichert
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
 const MAX_SIGNAL = 48 * 1024; // auch Hilfe-Antworten im Rückfall „über die Vermittler“ (#148)
@@ -334,6 +334,8 @@ function connectP2P({ key, RTC = globalThis.RTCPeerConnection, timeoutMs = 20000
     helloTimer = setInterval(() => signal.send({ type: 'hello', sid }), HELLO_EVERY_MS);
     setTimeout(() => signal.send({ type: 'hello', sid }), 600); // erst die Relays verbinden lassen
     onState('suche');
+    // #148: Diagnose – wie viele Vermittler sind von hier erreichbar?
+    setTimeout(() => !done && onState(`relays:${signal.openCount()}`), 4000);
 
     async function handle(msg) {
       if (msg.type === 'rpc-reply' && msg.sid === sid && typeof msg.id === 'string') {

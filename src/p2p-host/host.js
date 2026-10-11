@@ -14,4 +14,6 @@ window.pkP2P.onStart(({ key }) => {
     onState: (s) => window.pkP2P.state(s),
   });
   window.pkP2P.state('bereit');
+  // #148: Diagnose für das Protokoll am PC – wie viele Vermittler erreicht dieser PC?
+  setTimeout(() => host && window.pkP2P.state(`relays:${host.signal.openCount()}`), 5000);
 });
