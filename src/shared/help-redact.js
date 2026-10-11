@@ -28,6 +28,14 @@ function scrub(value, depth = 0) {
   return out;
 }
 
+// #158: Rechteck als Anteil der Fenstergröße (0…1) – alles andere wird verworfen
+const unit = (n) => Number.isFinite(n) && n >= -0.01 && n <= 1.01;
+function rectOf(r) {
+  if (!r || !unit(r.x) || !unit(r.y) || !unit(r.w) || !unit(r.h)) return null;
+  const c = (n) => Math.round(Math.min(1, Math.max(0, n)) * 10000) / 10000;
+  return { x: c(r.x), y: c(r.y), w: c(r.w), h: c(r.h) };
+}
+
 /**
  * Geschwärzter Zustand für den Helfer. `view` beschreibt, was die Oberfläche gerade zeigt.
  * Der Helfer sieht: welcher Bildschirm offen ist, den Einrichtungs-Status (ohne Geheimnisse) und die aktuelle Maus.
@@ -44,9 +52,13 @@ function redactView(view = {}) {
     settings: view.settings ? scrub(view.settings) : null,
     // Sichtbare Knöpfe/Labels: nur deren Beschriftung, Geheimnis-Felder als „verborgen“ markiert
     fields: Array.isArray(view.fields)
-      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) }))
+      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || f.secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`), rect: inChat ? null : rectOf(f.rect) }))
       : [],
-    cursor: view.cursor && Number.isFinite(view.cursor.x) ? { x: Math.round(view.cursor.x), y: Math.round(view.cursor.y) } : null,
+    // #158: Mauszeiger als Anteil (0…1) – passt beim Helfer auf das Bild
+    cursor: !inChat && view.cursor && unit(view.cursor.x) && unit(view.cursor.y) ? { x: Math.round(view.cursor.x * 1000) / 1000, y: Math.round(view.cursor.y * 1000) / 1000 } : null,
+    // erlaubter Bildbereich + zu schwärzende Stellen (das Bild selbst wird in Main geschwärzt, hier nur die Daten)
+    allowed: inChat ? null : rectOf(view.allowed),
+    masks: inChat || !Array.isArray(view.masks) ? [] : view.masks.slice(0, 60).map(rectOf).filter(Boolean),
     note: inChat ? 'Chats und Nachrichten sind für den Helfer verborgen.' : null,
   };
 }
@@ -66,7 +78,7 @@ const ALLOWED = {
   // zu einem Einrichtungs-Schritt scrollen / Hinweis zeigen
   highlight: (a) => typeof a.target === 'string' && a.target.length <= 80,
   scroll: (a) => ['up', 'down', 'top', 'bottom'].includes(a.dir),
-  cursor: (a) => typeof a.x === 'number' && typeof a.y === 'number',
+  cursor: (a) => unit(a.x) && unit(a.y), // #158: Anteil der Fenstergröße
 };
 
 /**

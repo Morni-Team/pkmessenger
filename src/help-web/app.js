@@ -177,10 +177,64 @@
       $('control').textContent = out.control ? 'Du kannst mithelfen (Knöpfe klicken).' : 'Nur Zusehen – der Nutzer hat das Mitsteuern aus.';
       if (v.hidden) $('fields').textContent = '';
       else renderFields(v);
-      var cur = $('cursor');
-      if (v.cursor) { show(cur, true); cur.style.left = (v.cursor.x - 8) + 'px'; cur.style.top = (v.cursor.y - 8) + 'px'; }
-      else show(cur, false);
-      setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); // über die Vermittler seltener abfragen
+      lastView = v;
+      canControl = Boolean(out.control);
+      // #158: echtes Bild der App holen (nicht über die Vermittler – zu groß dafür)
+      var wantShot = out.screen && !v.hidden && !(direct && direct.mode === 'vermittler');
+      var next = function () { setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); };
+      if (!wantShot) {
+        show($('shotwrap'), false);
+        $('fieldlist').open = true;
+        $('shothint').textContent = v.hidden ? '' : direct && direct.mode === 'vermittler' ? 'Über die Vermittler gibt es nur die Knopf-Liste (Bild wäre zu groß).' : '';
+        placeCursor(v);
+        return next();
+      }
+      return call('/screen', {}).then(function (r) {
+        var shot = r && r.screen;
+        if (shot && shot.img) {
+          $('shot').src = shot.img;
+          show($('shotwrap'), true);
+          $('shothint').textContent = canControl ? 'Klick ins Bild = Klick auf den Knopf an dieser Stelle. Schwarze Flächen sind privat.' : 'Nur Zusehen. Schwarze Flächen sind privat.';
+        } else show($('shotwrap'), false);
+        placeCursor(v);
+        next();
+      }, next);
     }).catch(function () { $('note').textContent = 'Verbindung verloren.'; });
   }
+
+  // #158: Maus des Nutzers auf dem Bild anzeigen (Anteil 0…1 → Prozent – passt bei jeder Bildgröße)
+  var lastView = null;
+  var canControl = false;
+  function placeCursor(v) {
+    var c = $('shotcursor');
+    if (v && v.cursor && !$('shotwrap').classList.contains('hidden')) {
+      show(c, true);
+      c.style.left = v.cursor.x * 100 + '%';
+      c.style.top = v.cursor.y * 100 + '%';
+    } else show(c, false);
+  }
+  // Klick ins Bild → kleinsten erlaubten Knopf an dieser Stelle finden (Geheimnis-Felder nie)
+  function pointOf(e) {
+    var img = $('shot');
+    var b = img.getBoundingClientRect();
+    return { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height };
+  }
+  $('shot').addEventListener('click', function (e) {
+    if (!canControl || !lastView) return;
+    var p = pointOf(e);
+    var hit = (lastView.fields || [])
+      .filter(function (f) { return f.rect && !f.secret && p.x >= f.rect.x && p.x <= f.rect.x + f.rect.w && p.y >= f.rect.y && p.y <= f.rect.y + f.rect.h; })
+      .sort(function (a, b) { return a.rect.w * a.rect.h - b.rect.w * b.rect.h; })[0];
+    if (!hit) { $('shothint').textContent = 'Dort ist kein Knopf, den du drücken darfst.'; return; }
+    $('shothint').textContent = 'Klick auf: ' + (hit.label || '(Knopf)');
+    call('/act', { action: { type: 'click', target: hit.id } });
+  });
+  // Eigene Maus dem Nutzer zeigen (höchstens 5× pro Sekunde)
+  var lastMove = 0;
+  $('shot').addEventListener('mousemove', function (e) {
+    if (!canControl || Date.now() - lastMove < 200) return;
+    lastMove = Date.now();
+    var p = pointOf(e);
+    call('/act', { action: { type: 'cursor', x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) } });
+  });
 })();

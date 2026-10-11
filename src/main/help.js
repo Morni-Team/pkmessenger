@@ -65,7 +65,7 @@ const isPrivateIp = (ip) => ip === '::1' || isLocalAddress(`http://${ip.includes
  * @param {() => string[]} o.lanAddresses
  * @param {string|null} o.hostName  mDNS-Name (kein IP im Link)
  */
-function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null, p2p = null, p2pPage = null }) {
+function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null, p2p = null, p2pPage = null, captureScreen = null }) {
   let server = null;
   let pairing = null; // { code, key, expires } – ein offener Einmal-Code
   let session = null; // { key, expires, approved, control } – der eine verbundene Helfer
@@ -74,6 +74,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   const rate = new Map();
   let controlAllowed = true; // „nur Zusehen“ schaltet das aus
   const activity = [];
+  let lastShot = null; // #158: zuletzt aufgenommenes Bild (kurz zwischengespeichert)
 
   function log(action, extra = {}) {
     const e = { at: now(), action, ...extra };
@@ -183,12 +184,26 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     if (!session || session.expires < now()) return { code: 401, obj: { error: 'Nicht verbunden.' } };
     const data = openBody(body, session.key);
     if (!data) return { code: 400, obj: { error: 'Ungültige oder wiederholte Anfrage.' } };
-    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: controlAllowed }, session.key) };
+    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: controlAllowed, screen: Boolean(captureScreen) }, session.key) };
+    // #158: echtes Bild der App (geschwärzt in help-screen.js) – höchstens alle 700 ms neu aufnehmen
+    if (path === '/screen') {
+      if (!captureScreen) return { code: 200, obj: seal({ screen: null }, session.key) };
+      if (!lastShot || now() - lastShot.at > 700) {
+        let shot = null;
+        try {
+          shot = await captureScreen(getView());
+        } catch (err) {
+          logger?.warn?.('help', `Bild: ${err?.message || err}`);
+        }
+        lastShot = { at: now(), shot };
+      }
+      return { code: 200, obj: seal({ screen: lastShot.shot }, session.key) };
+    }
     if (path === '/act') {
       const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed });
       if (!verdict.ok) return { code: 200, obj: seal({ rejected: verdict.reason }, session.key) };
       applyAction(data.action);
-      log('Helfer-Aktion', { kind: data.action?.type });
+      if (data.action?.type !== 'cursor') log('Helfer-Aktion', { kind: data.action?.type }); // Mausbewegungen nicht protokollieren
       return { code: 200, obj: seal({ ok: true }, session.key) };
     }
     return { code: 404, obj: { error: 'Unbekannt.' } };
