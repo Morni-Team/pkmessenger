@@ -23,6 +23,7 @@ const EVENT_TYPES = new Set([
   'help:status',
   // #160: Hilfe-Chat
   'help:chat',
+  'help:summary',
   'help:pending',
   'help:activity',
   'ai:job-done',

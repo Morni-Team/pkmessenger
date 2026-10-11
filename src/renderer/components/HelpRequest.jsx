@@ -105,10 +105,12 @@ export function HelpController({ toast }) {
   const [pending, setPending] = useState(null);
   const [active, setActive] = useState(false);
   const [cursor, setCursor] = useState(null);
+  const [summary, setSummary] = useState(null); // #160: „Das hat der Helfer gemacht“
 
   useEffect(() => {
     const off = bus.on((type, p) => {
       if (type === 'help:pending') setPending(p.done ? null : p);
+      if (type === 'help:summary') setSummary(p);
       if (type === 'help:status') {
         const running = Boolean(p?.running);
         setActive(running);
@@ -162,6 +164,7 @@ export function HelpController({ toast }) {
           </button>
         </div>
       )}
+      {summary && <HelpSummary summary={summary} onClose={() => setSummary(null)} />}
       {active && <HelpDrawings />}
       {active && <HelpChat />}
       {active && cursor && (
@@ -273,6 +276,50 @@ function HelpChat() {
         <button className="btn btn--primary btn--small" onClick={send}>
           Senden
         </button>
+      </div>
+    </div>
+  );
+}
+
+// #160: Nach der Fernhilfe: Was hat der Helfer gemacht? (Klicks/Einträge mit Beschriftung – nie eingegebene Texte)
+function HelpSummary({ summary, onClose }) {
+  const t = (at) => new Date(at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const minutes = Math.max(1, Math.round((summary.ended - summary.started) / 60000));
+  const changes = summary.actions.filter((a) => a.type === 'click' || a.type === 'type').length;
+  return (
+    <div className="modal-backdrop">
+      <div className="modal confirm help-summary" role="dialog" aria-label="Zusammenfassung der Fernhilfe">
+        <h3>📝 Das hat {summary.helper || 'der Helfer'} gemacht</h3>
+        <p className="muted small">
+          {minutes} Min. Fernhilfe · {changes} Klicks/Einträge · {summary.chats} Chat-Nachrichten. Prüfe kurz, ob alles so passt – Einstellungen kannst du jederzeit wieder ändern.
+        </p>
+        {summary.actions.length ? (
+          <ol className="help-summary__list">
+            {summary.actions.map((a, i) => (
+              <li key={`${a.at}-${i}`}>
+                <span className="muted">{t(a.at)}</span> {a.text}
+                {a.label ? <b> „{a.label}“</b> : null}
+                {a.count > 1 ? ` (${a.count}×)` : ''}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="small">Der Helfer hat nichts geklickt – ihr habt nur geschrieben.</p>
+        )}
+        <div className="confirm__actions">
+          <button
+            className="btn btn--ghost"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('pk:open-settings', { detail: {} }));
+              onClose();
+            }}
+          >
+            Einstellungen ansehen
+          </button>
+          <button className="btn btn--primary" onClick={onClose}>
+            Passt, danke
+          </button>
+        </div>
       </div>
     </div>
   );
