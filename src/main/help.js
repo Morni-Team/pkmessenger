@@ -64,7 +64,7 @@ const isPrivateIp = (ip) => ip === '::1' || isLocalAddress(`http://${ip.includes
  * @param {() => string[]} o.lanAddresses
  * @param {string|null} o.hostName  mDNS-Name (kein IP im Link)
  */
-function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null }) {
+function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null, p2p = null, p2pPage = null }) {
   let server = null;
   let pairing = null; // { code, key, expires } – ein offener Einmal-Code
   let session = null; // { key, expires, approved, control } – der eine verbundene Helfer
@@ -96,6 +96,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       relayMode: getRelay()?.mode || null,
       relayConnected: relayUp,
       relayError,
+      direct: p2pState,
       activity: activity.slice(0, 20),
     };
   }
@@ -236,6 +237,39 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     });
   }
 
+  // Direktverbindung (vibeworks #219, #143): WebRTC im versteckten P2P-Fenster, Vermittlung über öffentliche Nostr-Relays.
+  // Gleiche rpc-Logik wie LAN/Relay (Einmal-Code, Bestätigung am PC, Schwärzen, Prüfung jeder Aktion).
+  // Nur, wenn Hilfe von außen erlaubt ist (Relay-Modus nicht „nur WLAN“).
+  let p2pState = null;
+  function startP2P(key) {
+    if (!p2p) return false;
+    try {
+      p2p.start(
+        key,
+        async (p, body) => (await rpc(p, body, { ip: 'direkt' })).obj,
+        (st) => {
+          const was = p2pState;
+          p2pState = st;
+          if (st === 'verbunden' && was !== st) log('Helfer direkt verbunden');
+          emitStatus();
+        },
+      );
+      p2pState = 'suche';
+      return true;
+    } catch (err) {
+      logger?.warn?.('help', `p2p: ${err?.message || err}`);
+      return false;
+    }
+  }
+  function stopP2P() {
+    p2pState = null;
+    try {
+      p2p?.stop();
+    } catch {
+      /* egal */
+    }
+  }
+
   async function handle(req, res) {
     const ip = remoteIp(req);
     if (!isPrivateIp(ip)) return json(res, 403, { error: 'Nur im eigenen Netzwerk.' });
@@ -276,6 +310,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     session = null;
     const relay = getRelay();
     if (relay?.wss) startRelay(roomId);
+    const direct = relay && p2pPage ? startP2P(key) : false;
     const startServer = () =>
       new Promise((resolve) => {
         if (server?.listening) return resolve();
@@ -292,7 +327,13 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       // LAN: nur der PC-Name, kein IP im Link. Code wird separat angezeigt.
       const url = hostName ? `http://${hostName}:${prt}/help/${hash}` : null;
       // Außerhalb des WLANs: Link über den Relay – der Helfer öffnet ihn überall im Browser (kein QR-Scan nötig).
-      const relayUrl = relay?.httpBase ? `${relay.httpBase}/help/#r=${roomId}&c=${b64url(key)}` : null;
+      // Mit Direktverbindung: Seite von GitHub Pages (kein eigener Server nötig), Relay nur als Rückfall (h=…).
+      const relayHost = relay?.httpBase ? relay.httpBase.replace(/^https:\/\//, '') : '';
+      const relayUrl = direct
+        ? `${p2pPage}#p=1&c=${b64url(key)}${relayHost ? `&r=${roomId}&h=${relayHost}` : ''}`
+        : relay?.httpBase
+          ? `${relay.httpBase}/help/#r=${roomId}&c=${b64url(key)}`
+          : null;
       log('Hilfe angefordert');
       emitStatus();
       return { code, url, relayUrl, port: prt, host: hostName, expires: pairing.expires, relay: Boolean(relayUrl) };
@@ -320,6 +361,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     pairing = null;
     session = null;
     stopRelay();
+    stopP2P();
     if (pendingApproval) {
       pendingApproval.resolve(false);
       pendingApproval = null;
