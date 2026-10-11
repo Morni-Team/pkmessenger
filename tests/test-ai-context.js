@@ -53,3 +53,30 @@ test('Passt gar nichts: verständliche Meldung mit Tipp für LM Studio', async (
   assert.equal(last.ok, false);
   assert.match(last.answer,/Kontextfenster des Modells \(2816 Tokens\)/);
 });
+
+test('#131 Zusammenfassen mit kleinem Kontext: stückweise, dann zusammengeführt – nichts geht verloren', async () => {
+  const data = {};
+  const store = { get: () => ({ ...data }), set: (k, v) => (data[k] = v) };
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    const b = JSON.parse(init.body);
+    const user = b.messages.at(-1).content;
+    asked.push(user);
+    if (JSON.stringify(b).length > 2500) return { ok: false, status: 400, json: async () => OVERFLOW };
+    const facts = [...user.matchAll(/Fakt (\d+)/g)].map((x) => `- Fakt ${x[1]}`);
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: [...new Set(facts)].join('\n') || '- nichts' } }] }) };
+  };
+  let raw = null;
+  const memory = createMemory({ vault: { get: () => raw, set: (v) => (raw = v), clear: () => (raw = null) } });
+  for (let i = 1; i <= 8; i += 1) memory.remember('500000000000000001', 'Jonimoni', `Merk dir Fakt ${i}. ${'bla '.repeat(60)}`, 'Okay');
+  const service = { getStatus: () => ({ bot: null }) };
+  const ai = createAiManager({ store, secret: { has: () => false, get: () => null }, service, fetchImpl, memory });
+  ai.setConfig({ enabled: true, provider: 'openai', baseUrl: 'http://192.168.178.61:1234/v1', model: 'm' });
+  ai.setResponder(validators.aiResponder({ enabled: true, channelIds: [], dms: false, allowUsers: [], blockUsers: [], instructions: '', context: false, notify: false, memory: true }));
+  const res = await ai.memoryApi.compactNow({ userId: '500000000000000001' });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const summary = memory.view('500000000000000001').summary;
+  for (let i = 1; i <= 8; i += 1) assert.ok(summary.includes(`Fakt ${i}`), `Fakt ${i} fehlt`);
+  assert.ok(asked.length >= 3); // erst zu groß, dann in Stücken, dann zusammengeführt
+  assert.ok(asked.some((u) => /merge these parts/.test(u)));
+});
