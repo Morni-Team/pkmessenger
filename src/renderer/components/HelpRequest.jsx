@@ -4,7 +4,8 @@ import { bus } from '../state';
 import { startHelpBridge, stopHelpBridge } from '../helpBridge';
 
 // Fernhilfe (Issue #79): Der Nutzer fordert Hilfe an. Ein Helfer sieht nur die Einrichtung (Chats verborgen),
-// kann optional mithelfen, und der Nutzer kann jederzeit beenden (Knopf oder Strg+C).
+// kann optional mithelfen, und der Nutzer kann jederzeit beenden (Knopf oder Strg+Umschalt+X).
+// #156: früher Strg+C – dann beendete schon das Kopieren von Link/Code die Hilfe, bevor der Helfer da war.
 
 /** Fenster „Hilfe anfordern“ (öffnet sich über Event pk:help-open oder Prop open). */
 export function HelpDialog({ onClose, toast }) {
@@ -36,7 +37,7 @@ export function HelpDialog({ onClose, toast }) {
     }
   };
   const stop = async () => {
-    await api.helpStop().catch(() => {});
+    await api.helpStop({ reason: 'knopf' }).catch(() => {});
     setInfo(null);
     onClose();
   };
@@ -51,7 +52,7 @@ export function HelpDialog({ onClose, toast }) {
             ×
           </button>
         </div>
-        <p>Jemand, dem du vertraust, kann dir im selben WLAN beim Einrichten helfen. <b>Deine Chats und Nachrichten bleiben dabei verborgen.</b> Beenden kannst du jederzeit – auch mit <b>Strg+C</b>.</p>
+        <p>Jemand, dem du vertraust, kann dir im selben WLAN beim Einrichten helfen. <b>Deine Chats und Nachrichten bleiben dabei verborgen.</b> Beenden kannst du jederzeit – auch mit <b>Strg+Umschalt+X</b>.</p>
         {!info ? (
           <p>
             <button className="btn btn--primary" disabled={busy} onClick={request}>
@@ -99,7 +100,7 @@ export function HelpDialog({ onClose, toast }) {
   );
 }
 
-/** Läuft immer im Hintergrund: Bestätigung, Bridge start/stop, Strg+C, kleine Leiste wenn aktiv. */
+/** Läuft immer im Hintergrund: Bestätigung, Bridge start/stop, Not-Aus Strg+Umschalt+X, kleine Leiste wenn aktiv. */
 export function HelpController({ toast }) {
   const [pending, setPending] = useState(null);
   const [active, setActive] = useState(false);
@@ -120,7 +121,7 @@ export function HelpController({ toast }) {
     window.addEventListener('help:cursor', onCursor);
     api.helpStatus().then((s) => s?.running && (setActive(true), startHelpBridge())).catch(() => {});
     const onKey = (e) => {
-      if (e.ctrlKey && (e.key || '').toLowerCase() === 'c' && active) api.helpStop().catch(() => {});
+      if (e.ctrlKey && e.shiftKey && (e.key || '').toLowerCase() === 'x' && active) api.helpStop({ reason: 'tastatur' }).catch(() => {});
     };
     window.addEventListener('keydown', onKey);
     document.body.classList.toggle('help-active', active);
@@ -156,8 +157,8 @@ export function HelpController({ toast }) {
       {active && (
         <div className="help-bar" role="status">
           🙋 Fernhilfe aktiv – Chats verborgen
-          <button className="btn btn--small" onClick={() => api.helpStop().catch(() => {})}>
-            Beenden (Strg+C)
+          <button className="btn btn--small" onClick={() => api.helpStop({ reason: 'knopf' }).catch(() => {})}>
+            Beenden (Strg+Umschalt+X)
           </button>
         </div>
       )}

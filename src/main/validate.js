@@ -553,6 +553,13 @@ const validators = {
     if (!code) throw new ValidationError('Das ist kein gültiger Discord-Einladungslink (z. B. discord.gg/abc123).');
     return { code };
   },
+  // #156: Wodurch wurde die Fernhilfe beendet? (nur fürs Protokoll)
+  helpStop(p) {
+    if (p === undefined || p === null) return { reason: 'unbekannt' };
+    const { reason = 'unbekannt' } = obj(p);
+    if (!['knopf', 'tastatur', 'kein-link', 'unbekannt'].includes(reason)) throw new ValidationError('Ungültiger Grund.');
+    return { reason };
+  },
   helpRelay(p) {
     const { url, mode } = obj(p);
     if (mode !== undefined && !['standard', 'own', 'off'].includes(mode)) throw new ValidationError('Unbekannte Relay-Einstellung.');

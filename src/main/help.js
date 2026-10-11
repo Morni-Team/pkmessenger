@@ -389,7 +389,8 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   }
 
   /** Alles beenden (Knopf oder Strg+C): Server zu, keine Verbindung mehr. */
-  function stop() {
+  const STOP_TEXT = { knopf: 'Knopf „Hilfe beenden“', tastatur: 'Tastenkürzel Strg+Umschalt+X', 'kein-link': 'kein Link möglich', app: 'App wird beendet', unbekannt: '' };
+  function stop({ reason = 'unbekannt' } = {}) {
     pairing = null;
     session = null;
     stopRelay();
@@ -401,7 +402,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     const s = server;
     server = null;
     if (s) s.close();
-    log('Fernhilfe beendet');
+    log(STOP_TEXT[reason] ? `Fernhilfe beendet (${STOP_TEXT[reason]})` : 'Fernhilfe beendet');
     emitStatus();
     return status();
   }

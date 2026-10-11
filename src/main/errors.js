@@ -21,6 +21,8 @@ function describeError(err) {
   if (err.code === 'VALIDATION') return { code: 'VALIDATION', message: err.message, hint: err.hint || 'Eingabe prüfen und erneut versuchen.' };
   // KI-Agenten (Beta): Meldungen sind bereits deutsch und enthalten nie den API-Schlüssel
   if (err.code === 'AI') return { code: 'AI', message: err.message, hint: err.hint || '' };
+  // #156: absichtlich abgebrochen (schnell anderen Sprachkanal gewählt) – kein Fehler
+  if (err.code === 'VOICE_ABORTED') return { code: 'VOICE_ABORTED', message: err.message, hint: '' };
   if (err.code === 'NOT_READY') return { code: 'NOT_READY', message: 'Nicht mit Discord verbunden.', hint: 'Warte auf "Verbunden ✓" oder klicke auf "Neu verbinden".' };
   if (err.code === 'NOT_FOUND') return { code: 'NOT_FOUND', message: err.message, hint: 'Der Bot sieht dieses Ziel nicht (fehlende Rechte oder gelöscht).' };
   if (err.code === 'MISSING_PERMISSION') return { code: 'MISSING_PERMISSION', message: err.message, hint: err.hint || 'Bot-Rolle in Discord anpassen.' };

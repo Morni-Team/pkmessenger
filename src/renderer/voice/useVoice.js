@@ -78,6 +78,8 @@ export function useVoice({ toast, guildIds }) {
         await api.voiceJoin({ guildId: channel.guildId, channelId: channel.id, listen: true });
         engine().setPlayback(true);
       } catch (e) {
+        // #156: schnell einen anderen Kanal gewählt → der alte Beitritt wird absichtlich abgebrochen, kein Fehler
+        if (e.code === 'VOICE_ABORTED') return;
         toast({ kind: 'error', title: e.message, text: e.hint });
       }
     },
