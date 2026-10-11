@@ -5157,3 +5157,24 @@ body.help-active .help-bar {
   background: #f472b6;
   color: #fff;
 }
+
+/* ---------- Datenschutz beim ersten Start (#160) ---------- */
+.privacy {
+  width: min(680px, calc(100vw - 32px));
+}
+.privacy__text {
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  padding: 4px 14px 8px 4px;
+  margin: 8px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.privacy__text h3 {
+  margin: 14px 0 4px;
+  font-size: 15px;
+}
+.privacy__text p {
+  margin: 0 0 6px;
+  line-height: 1.5;
+}

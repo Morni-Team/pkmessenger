@@ -400,7 +400,7 @@ app.whenReady().then(() => {
   });
   session.defaultSession.setPermissionCheckHandler((_wc, perm, origin, details) => perm === 'media' && details?.mediaType !== 'video' && isOwnUrl(details?.requestingUrl || origin));
   const setScreenProtection = (on) => mainWindow?.setContentProtection(on);
-  registerIpc(ipcMain, { service, store, openEnvFile, openExternal, updater, appVersion: app.getVersion(), voice, tokenStore, setScreenProtection, ai, soundFile, copyText: (t) => clipboard.writeText(t), appLock, autostart, hello, background, logger, errorReport, openLogFolder, blocklist, remote, help, relayTester: createRelayTester(), currentRelay: () => relayConfig()?.wss || '', botModules }, isTrustedSender);
+  registerIpc(ipcMain, { service, store, openEnvFile, openExternal, updater, appVersion: app.getVersion(), voice, tokenStore, setScreenProtection, ai, soundFile, copyText: (t) => clipboard.writeText(t), appLock, autostart, hello, background, logger, errorReport, openLogFolder, blocklist, remote, help, relayTester: createRelayTester(), currentRelay: () => relayConfig()?.wss || '', botModules, quitApp: () => app.quit() }, isTrustedSender);
   // Der Renderer meldet laufend seine (ungeschwärzte) Sicht; geschwärzt wird erst im Hilfe-Manager.
   ipcMain.on('pk:help-view', (event, view) => {
     if (isTrustedSender(event) && view && typeof view === 'object') latestHelpView = view;

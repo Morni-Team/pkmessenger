@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('api', {
   helpRequest: call('pk:help-request'),
   helpStop: call('pk:help-stop'),
   helpChat: call('pk:help-chat'),
+  quitApp: call('pk:quit'),
   helpControl: call('pk:help-control'),
   helpDecide: call('pk:help-decide'),
   helpDisconnect: call('pk:help-disconnect'),

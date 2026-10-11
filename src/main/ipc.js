@@ -11,7 +11,7 @@ const { sealToken, openLink } = require('../shared/token-transfer');
  *  2. validiert den Payload,
  *  3. liefert IMMER { ok: true, data } oder { ok: false, error: { code, message, hint } } – nie eine Exception.
  */
-function buildHandlers({ service, store, openEnvFile, openExternal, updater, appVersion, voice, tokenStore, setScreenProtection, ai, soundFile, copyText, appLock, autostart, hello, background, logger, errorReport, openLogFolder, blocklist, remote, help, relayTester, currentRelay = () => '', botModules = null }) {
+function buildHandlers({ service, store, openEnvFile, openExternal, updater, appVersion, voice, tokenStore, setScreenProtection, ai, soundFile, copyText, appLock, autostart, hello, background, logger, errorReport, openLogFolder, blocklist, remote, help, relayTester, currentRelay = () => '', botModules = null, quitApp = null }) {
   const requireAi = () => {
     if (!ai) throw Object.assign(new Error('KI-Agenten sind nicht verfügbar.'), { code: 'NOT_FOUND' });
     return ai;
@@ -217,6 +217,11 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     'pk:help-status': () => (help ? { ...help.status(), relaySetting: relaySetting(store.get()) } : null),
     'pk:help-request': () => requireHelp().requestWithQr(),
     'pk:help-stop': (p) => requireHelp().stop(validators.helpStop(p)),
+    // #160: Datenschutz abgelehnt → App beenden
+    'pk:quit': () => {
+      setTimeout(() => quitApp?.(), 50);
+      return true;
+    },
     'pk:help-chat': (p) => requireHelp().chat(validators.helpChat(p)),
     'pk:help-control': (p) => requireHelp().setControl(validators.flag(p)),
     'pk:help-decide': (p) => requireHelp().decide(validators.remoteDecide(p)),

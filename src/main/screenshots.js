@@ -32,6 +32,18 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
     await shoot(win, dir, '01-setup');
     return;
   }
+  // #160: Datenschutz beim ersten Start – einmal zeigen, Knopf erst nach dem Lesen aktiv, dann zustimmen
+  await js(win, `localStorage.removeItem('pk.privacy.v1')`);
+  win.webContents.reload();
+  await wait(3000);
+  const consent = await js(win, `JSON.stringify({ sichtbar: Boolean(document.querySelector('.privacy')), knopfAnfangs: document.querySelector('.privacy .btn--primary')?.disabled })`);
+  await shoot(win, dir, '00-datenschutz');
+  await js(win, `(() => { const b = document.querySelector('.privacy__text'); if (b) { b.scrollTop = b.scrollHeight; b.dispatchEvent(new Event('scroll')); } })()`);
+  await wait(300);
+  const afterScroll = await js(win, `document.querySelector('.privacy .btn--primary')?.disabled`);
+  await js(win, `document.querySelector('.privacy .btn--primary')?.click()`);
+  await wait(1500);
+  console.log(`[datenschutz] ${consent} · nach dem Lesen gesperrt: ${afterScroll} · danach sichtbar: ${await js(win, `Boolean(document.querySelector('.privacy'))`)}`);
   // Gleicher Ausgangszustand wie beim ersten Start (Aussehen, Sortierung): Auswahl früherer Läufe verwerfen
   const hadPrefs = await js(win, `(() => { const had = localStorage.getItem('pk.prefs.v1') !== null; localStorage.removeItem('pk.prefs.v1'); return had; })()`);
   if (hadPrefs) {
