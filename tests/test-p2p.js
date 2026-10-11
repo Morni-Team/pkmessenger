@@ -251,3 +251,18 @@ test('P2P-Fenster darf nur /pair, /view, /act mit kleinem Objekt schicken (IPC-P
   assert.equal(checkRequest({ path: '/act', body: { x: 'y'.repeat(40000) } }), null);
   assert.equal(checkRequest(null), null);
 });
+
+test('#152 Pages-Seite: Direktverbindung steckt in app.js (kein eigenes p2p.js, das Werbeblocker sperren)', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { buildP2P } = require('../scripts/build-p2p');
+  await buildP2P();
+  const dir = path.join(__dirname, '..', 'build', 'pages', 'help');
+  assert.ok(!fs.existsSync(path.join(dir, 'p2p.js')));
+  const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /p2p\.js/);
+  assert.match(html, /<script src="app\.js"><\/script>/);
+  const app = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
+  assert.match(app, /PKP2P/);
+  assert.ok(app.indexOf('window.PKP2P') < app.indexOf('Verbindungs-Verlauf') || !app.includes('Verbindungs-Verlauf')); // P2P-Code vor der Seitenlogik
+});
