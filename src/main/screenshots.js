@@ -25,7 +25,7 @@ const typeInto = (selector, text) => `(() => {
 
 const key = (k, opts = {}) => `window.dispatchEvent(new KeyboardEvent('keydown', ${JSON.stringify({ key: k, bubbles: true, ...opts })}))`;
 
-async function runScreenshots(win, dir, { demo, stats, simulate }) {
+async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = null }) {
   fs.mkdirSync(dir, { recursive: true });
   await wait(3500);
   if (!demo) {
@@ -1191,6 +1191,16 @@ async function runScreenshots(win, dir, { demo, stats, simulate }) {
     await wait(300);
     await shoot(win, dir, '88-support-erweitert');
     console.log(`[support] ${sup}`);
+    // #158: genau das Bild, das der Helfer bekäme (geschwärzt) – zum Ansehen speichern
+    if (captureHelp) {
+      await js(win, `document.querySelector('.settings__nav [data-nav="aussehen"]')?.click()`);
+      await wait(1200); // Bridge meldet die Sicht alle 700 ms
+      const shot = await captureHelp();
+      if (shot?.img) require('node:fs').writeFileSync(require('node:path').join(dir, '89-helfer-bild.jpg'), Buffer.from(shot.img.split(',')[1], 'base64'));
+      console.log(`[helfer-bild] ${shot ? `${shot.w}x${shot.h}, ${Math.round(shot.img.length / 1024)} KB` : 'kein Bild'}`);
+      await js(win, `document.querySelector('.settings__nav [data-nav="support"]')?.click()`);
+      await wait(300);
+    }
     await js(win, `[...document.querySelectorAll('.support__link .btn')].find((b) => b.textContent.includes('beenden'))?.click()`);
     await wait(300);
     await js(win, `document.querySelector('.settings .icon-btn')?.click()`);

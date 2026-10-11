@@ -20,7 +20,7 @@
       * { box-sizing: border-box; }
       body { margin: 0; font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
       header { padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-weight: 700; }
-      main { padding: 16px; max-width: 760px; margin: 0 auto; }
+      main { padding: 16px; max-width: 1240px; margin: 0 auto; }
       .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
       label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
       input { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font: inherit; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -30,6 +30,10 @@
       .field.secret { opacity: 0.6; cursor: not-allowed; }
       .muted { color: var(--muted); font-size: 13px; }
       .warn { color: var(--warn); }
+      .shot { position: relative; margin: 8px 0; }
+      .shot img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); cursor: crosshair; user-select: none; }
+      #shotcursor { position: absolute; width: 18px; height: 18px; border: 2px solid var(--accent); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: left 0.15s, top 0.15s; box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.25); }
+      #fieldlist summary { cursor: pointer; margin: 6px 0; }
       .screen { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
       .hidden { display: none !important; }
       #cursor { position: fixed; width: 16px; height: 16px; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none; transition: all 0.15s; z-index: 50; }
@@ -51,7 +55,16 @@
       <section id="live" class="card hidden">
         <div class="screen" id="screen"></div>
         <div id="note" class="warn"></div>
-        <div id="fields"></div>
+        <!-- #158: echtes Bild der App (Chats & Geheimnisse sind schon am PC geschwärzt). Klick = Knopf an dieser Stelle -->
+        <div id="shotwrap" class="shot hidden">
+          <img id="shot" alt="Bild der App (geschwärzt)" draggable="false" />
+          <div id="shotcursor" class="hidden" title="Maus des Nutzers"></div>
+        </div>
+        <p id="shothint" class="muted"></p>
+        <details id="fieldlist">
+          <summary class="muted">Knöpfe als Liste</summary>
+          <div id="fields"></div>
+        </details>
         <p class="muted" id="control"></p>
         <p class="muted" id="via"></p>
       </section>

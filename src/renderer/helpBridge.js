@@ -6,9 +6,13 @@ let timer = null;
 let unAction = null;
 let lastCursor = null;
 
+// #158: alle Positionen als ANTEIL der Fenstergröße (0…1) – dann passen sie beim Helfer auf das Bild, egal wie groß
+const norm = (r) => ({ x: r.left / innerWidth, y: r.top / innerHeight, w: r.width / innerWidth, h: r.height / innerHeight });
 const onMouse = (e) => {
-  lastCursor = { x: e.clientX, y: e.clientY };
+  lastCursor = { x: e.clientX / innerWidth, y: e.clientY / innerHeight };
 };
+// Was im Bild für den Helfer IMMER geschwärzt wird (zusätzlich zu allem außerhalb des erlaubten Bereichs)
+const PRIVATE = 'input[type=password], [data-private], .toast, .toasts, .ai-memory, .ai-preview, .ai-memory-row, .ctx-menu, .profile-card';
 
 function currentScreen() {
   // #104: Die Einstellungen öffnen als Modal ÜBER dem Workspace (.layout bleibt dahinter). Darum zuerst auf die
@@ -34,14 +38,25 @@ function collectFields() {
     el.setAttribute('data-help-id', id);
     const label = (el.getAttribute('aria-label') || el.textContent || el.placeholder || el.value || '').trim().slice(0, 80);
     const secret = el.type === 'password';
-    return { id, label, secret };
+    return { id, label, secret, rect: norm(el.getBoundingClientRect()) };
   });
+}
+
+// Erlaubter Bildbereich: in den Einstellungen nur das Einstellungs-Fenster, bei der Einrichtung das ganze Fenster
+function allowedRect(screen) {
+  if (screen === 'settings') {
+    const m = document.querySelector('.modal.settings');
+    return m ? norm(m.getBoundingClientRect()) : null;
+  }
+  if (screen === 'setup') return { x: 0, y: 0, w: 1, h: 1 };
+  return null;
 }
 
 function buildView() {
   const screen = currentScreen();
   const inChat = screen === 'workspace';
-  return { screen, fields: inChat ? [] : collectFields(), cursor: lastCursor };
+  const masks = inChat ? [] : [...document.querySelectorAll(PRIVATE)].filter(visible).slice(0, 60).map((el) => norm(el.getBoundingClientRect()));
+  return { screen, fields: inChat ? [] : collectFields(), cursor: lastCursor, allowed: inChat ? null : allowedRect(screen), masks };
 }
 
 function pushView() {

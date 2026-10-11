@@ -181,6 +181,7 @@ const lanAddresses = () =>
 // Standard: Morni-Team-Server (nichts installieren); eigener Server oder aus unter Support → Erweitert (vibeworks #219)
 const { resolveRelay, HELP_PAGE } = require('../shared/relay-config');
 const { createP2PBridge } = require('./p2p-bridge');
+const { captureForHelper } = require('./help-screen');
 const relayConfig = () => resolveRelay(store.get(), { demo: Boolean(demo) });
 const remoteRelayConfig = () => resolveRelay(store.get(), { demo: Boolean(demo), forRemote: true });
 const remote = createRemote({
@@ -226,6 +227,8 @@ const help = createHelp({
   // Im Demo-/Screenshot-Lauf aus (kein Netz).
   p2p: demo || SHOTS_ARG ? null : createP2PBridge({ BrowserWindow, ipcMain, htmlPath: path.join(ROOT, 'build', 'p2p-host', 'index.html'), preloadPath: path.join(__dirname, '..', 'preload', 'p2p-preload.js'), logger }),
   p2pPage: HELP_PAGE,
+  // #158: echtes Bild der App für den Helfer – Chats & Geheimnisse werden in help-screen.js geschwärzt
+  captureScreen: (view) => (mainWindow && !mainWindow.isDestroyed() ? captureForHelper({ view, capture: () => mainWindow.webContents.capturePage(), nativeImage }) : null),
 });
 /** „Hilfe anfordern“: Einmal-Code + QR-Code (als Bild) für die Oberfläche */
 help.requestWithQr = async () => {
@@ -367,7 +370,7 @@ function createWindow() {
     const dir = path.resolve(SHOTS_ARG.split('=')[1]);
     mainWindow.webContents.once('did-finish-load', () => {
       require('./screenshots')
-        .runScreenshots(mainWindow, dir, { demo: DEMO, stats: demo?.stats, simulate: demo?.simulate })
+        .runScreenshots(mainWindow, dir, { demo: DEMO, stats: demo?.stats, simulate: demo?.simulate, captureHelp: () => captureForHelper({ view: latestHelpView, capture: () => mainWindow.webContents.capturePage(), nativeImage }) })
         .catch((e) => console.error('[screenshots] Fehler:', e))
         .finally(() => app.quit());
     });

@@ -166,8 +166,9 @@ export function HelpController({ toast }) {
         <div
           style={{
             position: 'fixed',
-            left: cursor.x,
-            top: cursor.y,
+            // #158: Anteil der Fenstergröße (0…1) → passt unabhängig von Bildschirmgröße und Zoom des Helfers
+            left: `${cursor.x * 100}%`,
+            top: `${cursor.y * 100}%`,
             zIndex: 9999,
             pointerEvents: 'none',
             fontSize: '24px',

@@ -33,7 +33,7 @@ test('scrub entfernt Nachrichten, Namen und Geheimnisse, lässt Harmloses stehen
   assert.equal(s.count, 7);
 });
 
-test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, Cursor gerundet', () => {
+test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, Cursor als Anteil (0…1, #158)', () => {
   const v = redactView({
     screen: 'setup',
     setup: { step: 'intent', botToken: 'MTxx.secret' },
@@ -41,7 +41,7 @@ test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, 
       { id: 'token-input', label: 'Bot-Token einfügen' },
       { id: 'wizard-next', label: 'Weiter' },
     ],
-    cursor: { x: 12.6, y: 40.2 },
+    cursor: { x: 0.12345, y: 0.40216 },
   });
   assert.equal(v.hidden, false);
   assert.equal(v.setup.botToken, BLACK);
@@ -50,7 +50,7 @@ test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, 
   assert.equal(tokenField.secret, true);
   assert.match(tokenField.label, /verborgen/);
   assert.equal(v.fields.find((f) => f.id === 'wizard-next').secret, false);
-  assert.deepEqual(v.cursor, { x: 13, y: 40 });
+  assert.deepEqual(v.cursor, { x: 0.123, y: 0.402 });
 });
 
 test('Helfer-Aktionen: nur sichtbare, nicht-geheime Ziele; Sicherheits-Felder nie', () => {
