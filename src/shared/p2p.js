@@ -16,7 +16,7 @@ const { bytesToHex } = require('@noble/hashes/utils');
 const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.snort.social', 'wss://nostr.mom'];
 const KIND = 25097; // ephemer: wird nicht gespeichert
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
-const MAX_SIGNAL = 16 * 1024;
+const MAX_SIGNAL = 48 * 1024; // auch Hilfe-Antworten im Rückfall „über die Vermittler“ (#148)
 const MAX_FRAME = 64 * 1024;
 const HELLO_EVERY_MS = 3000;
 const ICE_WAIT_MS = 3000;
@@ -171,9 +171,31 @@ function createP2PHost({ key, onRequest, onState = () => {}, RTC = globalThis.RT
   let pc = null;
   let peerSid = null;
   let busy = false;
+  let tunnelSid = null; // #148: Helfer, der über die Vermittler (ohne Direktverbindung) arbeitet
+  const seenRpc = new Set();
   const signal = createSignal({ key, role: 'host', onSignal: handle, ...signalOpts });
 
   async function handle(msg) {
+    // #148: Rückfall ohne Direktverbindung (VPN, strenge Netze): Anfragen kommen verschlüsselt über die Vermittler
+    if (msg.type === 'rpc' && typeof msg.sid === 'string' && msg.sid.length <= 40 && typeof msg.id === 'string' && msg.id.length <= 20 && typeof msg.path === 'string') {
+      if (tunnelSid && msg.sid !== tunnelSid) return; // nur ein Helfer gleichzeitig
+      if (!tunnelSid) {
+        tunnelSid = msg.sid;
+        onState('vermittler');
+      }
+      const key2 = `${msg.sid}|${msg.id}`;
+      if (seenRpc.has(key2)) return;
+      seenRpc.add(key2);
+      if (seenRpc.size > 5000) seenRpc.delete(seenRpc.values().next().value);
+      let reply = null;
+      try {
+        reply = await onRequest(msg.path, msg.body);
+      } catch {
+        reply = { error: 'Fehler.' };
+      }
+      signal.send({ type: 'rpc-reply', sid: msg.sid, id: msg.id, reply });
+      return;
+    }
     if (msg.type === 'hello' && typeof msg.sid === 'string' && msg.sid.length <= 40) {
       if (busy && msg.sid !== peerSid) return; // nur ein Helfer gleichzeitig
       if (busy) return;
@@ -258,13 +280,14 @@ function createP2PHost({ key, onRequest, onState = () => {}, RTC = globalThis.RT
  * Helfer-Seite: Direktverbindung zum PC aufbauen. → Promise<{ send(path, body) → Promise<antwort>, close() }>
  * Bricht nach timeoutMs ab (dann nimmt die Seite den Relay als Rückfall).
  */
-function connectP2P({ key, RTC = globalThis.RTCPeerConnection, timeoutMs = 20000, signalOpts = {}, onState = () => {} }) {
+function connectP2P({ key, RTC = globalThis.RTCPeerConnection, timeoutMs = 20000, signalOpts = {}, onState = () => {}, tunnelFallback = true }) {
   return new Promise((resolve, reject) => {
     const sid = bytesToHex(nacl.randomBytes(8));
     let pc = null;
     let done = false;
     let helloTimer = null;
     let timer = null;
+    let hostSeen = false; // hat der PC überhaupt geantwortet?
     const pending = {};
     let nextId = 1;
     const signal = createSignal({ key, role: 'guest', onSignal: handle, ...signalOpts });
@@ -273,16 +296,56 @@ function connectP2P({ key, RTC = globalThis.RTCPeerConnection, timeoutMs = 20000
       done = true;
       clearInterval(helloTimer);
       clearTimeout(timer);
-      signal.close();
       if (pc) try { pc.close(); } catch { /* egal */ }
+      // #148: Direkt geht nicht (VPN, strenges Netz), aber die Vermittler sind erreichbar → darüber weiterarbeiten
+      if (tunnelFallback && hostSeen && signal.openCount() > 0) {
+        onState('vermittler');
+        resolve(tunnelTransport());
+        return;
+      }
+      signal.close();
       reject(new Error(why));
     };
-    timer = setTimeout(() => fail('Direktverbindung nicht möglich.'), timeoutMs);
+    function tunnelTransport() {
+      return {
+        mode: 'vermittler',
+        send(path, body) {
+          return new Promise((res) => {
+            const id = String(nextId++);
+            const t = setTimeout(() => {
+              delete pending[id];
+              res(null);
+            }, 15000);
+            pending[id] = { resolve: res, timer: t };
+            if (!signal.send({ type: 'rpc', sid, id, path, body })) {
+              clearTimeout(t);
+              delete pending[id];
+              res(null);
+            }
+          });
+        },
+        close() {
+          signal.close();
+        },
+        onClose() {},
+      };
+    }
+    timer = setTimeout(() => fail(hostSeen ? 'Direktverbindung nicht möglich.' : 'PC nicht gefunden – ist dort „Hilfe starten“ noch aktiv?'), timeoutMs);
     helloTimer = setInterval(() => signal.send({ type: 'hello', sid }), HELLO_EVERY_MS);
     setTimeout(() => signal.send({ type: 'hello', sid }), 600); // erst die Relays verbinden lassen
     onState('suche');
 
     async function handle(msg) {
+      if (msg.type === 'rpc-reply' && msg.sid === sid && typeof msg.id === 'string') {
+        const p = pending[msg.id];
+        if (p) {
+          clearTimeout(p.timer);
+          delete pending[msg.id];
+          p.resolve(msg.reply);
+        }
+        return;
+      }
+      if (msg.type === 'offer' && msg.sid === sid) hostSeen = true;
       if (done || pc || msg.type !== 'offer' || msg.sid !== sid || typeof msg.sdp !== 'string' || msg.sdp.length > MAX_SIGNAL) return;
       clearInterval(helloTimer);
       onState('verbinde');

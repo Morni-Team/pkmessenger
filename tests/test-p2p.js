@@ -142,7 +142,7 @@ test('Falscher Schlüssel: anderes Thema, und gefälschte Nachrichten werden ign
   const { FakeWS } = fakeNostr();
   const RTC = fakeRtc();
   const host = createP2PHost({ key, RTC, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS }, onRequest: async () => ({ ok: true }) });
-  await assert.rejects(connectP2P({ key: nacl.randomBytes(32), RTC, timeoutMs: 400, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS } }), /Direktverbindung nicht möglich/);
+  await assert.rejects(connectP2P({ key: nacl.randomBytes(32), RTC, timeoutMs: 400, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS } }), /PC nicht gefunden/);
   // Jemand kennt das Thema, aber nicht den Schlüssel → nichts passiert
   const got = [];
   const listener = createSignal({ key, role: 'guest', relays: RELAYS, WebSocketImpl: FakeWS, onSignal: (m) => got.push(m) });
@@ -157,13 +157,25 @@ test('Falscher Schlüssel: anderes Thema, und gefälschte Nachrichten werden ign
   host.close();
 });
 
-test('Direktverbindung scheitert (strenges Netz) → Fehler, damit die Seite den Relay als Rückfall nimmt', async () => {
+test('#148 Direktverbindung scheitert (VPN, strenges Netz) → weiter über die Vermittler, Anfragen kommen trotzdem an', async () => {
+  const key = nacl.randomBytes(32);
+  const { FakeWS, published } = fakeNostr();
+  const RTC = fakeRtc({ failConnect: true });
+  const states = [];
+  const host = createP2PHost({ key, RTC, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS }, onRequest: async (p, body) => ({ ok: true, echo: body.x, p }), onState: (s) => states.push(s) });
+  const conn = await connectP2P({ key, RTC, timeoutMs: 5000, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS } });
+  assert.equal(conn.mode, 'vermittler');
+  assert.deepEqual(await conn.send('/view', { x: 7 }), { ok: true, echo: 7, p: '/view' });
+  assert.ok(states.includes('vermittler'));
+  for (const { e } of published) assert.doesNotMatch(e.content, /view|echo/); // auch hier nur Datensalat
+  conn.close();
+  host.close();
+});
+
+test('#148 PC gar nicht online → klare Meldung statt Endlos-Warten', async () => {
   const key = nacl.randomBytes(32);
   const { FakeWS } = fakeNostr();
-  const RTC = fakeRtc({ failConnect: true });
-  const host = createP2PHost({ key, RTC, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS }, onRequest: async () => ({}) });
-  await assert.rejects(connectP2P({ key, RTC, timeoutMs: 5000, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS } }), /nicht möglich/);
-  host.close();
+  await assert.rejects(connectP2P({ key, RTC: fakeRtc(), timeoutMs: 300, signalOpts: { relays: RELAYS, WebSocketImpl: FakeWS } }), /PC nicht gefunden/);
 });
 
 test('Nur ein Helfer gleichzeitig: zweites „hello“ wird ignoriert', async () => {

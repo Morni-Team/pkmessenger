@@ -251,6 +251,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
           const was = p2pState;
           p2pState = st;
           if (st === 'verbunden' && was !== st) log('Helfer direkt verbunden');
+          if (st === 'vermittler' && was !== st) log('Helfer über die Vermittler verbunden (keine Direktverbindung möglich)');
           emitStatus();
         },
       );
