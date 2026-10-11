@@ -111,7 +111,58 @@ function createRelayTester({ fetchImpl = (...a) => fetch(...a), WebSocketImpl = 
     return done();
   }
 
-  return { test };
+  /**
+   * #151: Den KOSTENLOSEN Weg prüfen (Direktverbindung): Sind die öffentlichen Nostr-Vermittler erreichbar, ist die
+   * Helfer-Seite auf GitHub Pages online? Dafür braucht es keinen eigenen Server.
+   */
+  async function testDirect({ relays, page }) {
+    const started = now();
+    const WS = loadWs();
+    const reach = await Promise.all(
+      relays.map(
+        (url) =>
+          new Promise((resolve) => {
+            if (!WS) return resolve(false);
+            let ws;
+            const timer = setTimeout(() => done(false), TIMEOUT_MS);
+            timer.unref?.();
+            function done(ok) {
+              clearTimeout(timer);
+              try {
+                ws?.close();
+              } catch {
+                /* egal */
+              }
+              resolve(ok);
+            }
+            try {
+              ws = new WS(url);
+            } catch {
+              return done(false);
+            }
+            ws.on('open', () => done(true));
+            ws.on('error', () => done(false));
+          }),
+      ),
+    );
+    const n = reach.filter(Boolean).length;
+    const steps = [
+      {
+        name: 'Kostenlose Vermittler',
+        ok: n > 0,
+        detail: n ? `${n} von ${relays.length} erreichbar – darüber finden sich Helfer und PC.` : 'Keiner erreichbar – blockiert eine Firewall, ein VPN oder ein Virenscanner WebSockets?',
+      },
+    ];
+    try {
+      const res = await fetchImpl(page, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { 'user-agent': 'PKMessenger-RelayTest' } });
+      steps.push({ name: 'Helfer-Seite', ok: res.ok, detail: res.ok ? 'Online (GitHub Pages).' : `Antwortet mit HTTP ${res.status}.` });
+    } catch (err) {
+      steps.push({ name: 'Helfer-Seite', ok: false, detail: explain(err) });
+    }
+    return { ok: steps.every((s) => s.ok), steps, ms: now() - started };
+  }
+
+  return { test, testDirect };
 }
 
 module.exports = { createRelayTester, explain };
