@@ -217,6 +217,7 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     'pk:help-status': () => (help ? { ...help.status(), relaySetting: relaySetting(store.get()) } : null),
     'pk:help-request': () => requireHelp().requestWithQr(),
     'pk:help-stop': (p) => requireHelp().stop(validators.helpStop(p)),
+    'pk:help-chat': (p) => requireHelp().chat(validators.helpChat(p)),
     'pk:help-control': (p) => requireHelp().setControl(validators.flag(p)),
     'pk:help-decide': (p) => requireHelp().decide(validators.remoteDecide(p)),
     'pk:help-disconnect': () => requireHelp().disconnect(),

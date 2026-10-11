@@ -73,3 +73,62 @@ test('Maus: als Anteil 0…1 (passt bei jeder Größe); Helfer-Maus nur mit gül
   assert.equal(allowHelperAction({ type: 'cursor', x: 0.5, y: 0.5 }, { view }).ok, true);
   assert.equal(allowHelperAction({ type: 'cursor', x: 800, y: 600 }, { view }).ok, false);
 });
+
+test('#160 Neue Helfer-Aktionen: Einstellungen öffnen + Chat auch im Chat-Bereich, Zeichnen nur außerhalb, alles geprüft', () => {
+  const chatView = { screen: 'workspace' };
+  const settingsView = { screen: 'settings', fields: [] };
+  assert.equal(allowHelperAction({ type: 'open-settings' }, { view: chatView }).ok, true);
+  assert.equal(allowHelperAction({ type: 'chat', text: 'Hallo!' }, { view: chatView }).ok, true);
+  assert.equal(allowHelperAction({ type: 'chat', text: 'Hallo!' }, { view: chatView, controlAllowed: false }).ok, true); // nur Zusehen: chatten geht
+  assert.equal(allowHelperAction({ type: 'open-settings' }, { view: chatView, controlAllowed: false }).ok, false);
+  assert.equal(allowHelperAction({ type: 'chat', text: 'x'.repeat(301) }, { view: chatView }).ok, false);
+  assert.equal(allowHelperAction({ type: 'chat', text: '   ' }, { view: chatView }).ok, false);
+  assert.equal(allowHelperAction({ type: 'draw', points: [[0.1, 0.1], [0.2, 0.2]] }, { view: settingsView }).ok, true);
+  assert.equal(allowHelperAction({ type: 'draw', points: [[0.1, 0.1], [0.2, 0.2]] }, { view: chatView }).ok, false); // im Chat nie
+  assert.equal(allowHelperAction({ type: 'draw', points: [[0.1, 0.1]] }, { view: settingsView }).ok, false);
+  assert.equal(allowHelperAction({ type: 'draw', points: Array.from({ length: 201 }, () => [0.5, 0.5]) }, { view: settingsView }).ok, false);
+  assert.equal(allowHelperAction({ type: 'draw', points: [[0.1, 0.1], [5, 0.2]] }, { view: settingsView }).ok, false);
+  assert.equal(allowHelperAction({ type: 'clear-draw' }, { view: settingsView }).ok, true);
+});
+
+test('#160 Hilfe-Chat: Helfer-Nachricht kommt als Chat an (nicht als Klick), Nutzer antwortet, Verlauf endet mit der Hilfe', async () => {
+  const nacl = require('tweetnacl');
+  const { createHelp } = require('../src/main/help');
+  const { validators } = require('../src/main/validate');
+  const events = [];
+  const applied = [];
+  const help = createHelp({
+    emit: (t, p) => {
+      events.push([t, p]);
+      if (t === 'help:pending' && !p.done) setImmediate(() => help.decide({ id: p.id, allow: true }));
+    },
+    getView: () => ({ screen: 'workspace' }),
+    applyAction: (a) => applied.push(a),
+    getRelay: () => null,
+    hostName: 'pc.local',
+    port: 0,
+    bindHost: '127.0.0.1',
+    lanAddresses: () => ['127.0.0.1'],
+  });
+  const r = await help.request();
+  const key = new Uint8Array(Buffer.from(new URL(r.url).hash.replace('#c=', ''), 'base64url'));
+  const seal = (obj) => {
+    const n = nacl.randomBytes(24);
+    return { n: Buffer.from(n).toString('base64'), c: Buffer.from(nacl.secretbox(Buffer.from(JSON.stringify(obj)), n, key)).toString('base64') };
+  };
+  const base = `http://127.0.0.1:${help._test.handleAddress().port}`;
+  const post = async (p, body) => (await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  await post('/pair', { code: r.code, ...seal({ name: 'Alex', t: Date.now() }) });
+  await post('/act', seal({ t: Date.now(), action: { type: 'chat', text: 'Klick mal auf Einstellungen' } }));
+  assert.equal(applied.length, 0); // Chat ist keine Aktion in der Oberfläche
+  assert.ok(events.some(([t, p]) => t === 'help:chat' && p.from === 'helfer' && p.text === 'Klick mal auf Einstellungen'));
+  assert.deepEqual(validators.helpChat({ text: '  Okay!  ' }), { text: 'Okay!' });
+  assert.throws(() => validators.helpChat({ text: '' }), /1 bis 300/);
+  const res = help.chat({ text: 'Okay!' });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.chat.map((m) => m.from), ['helfer', 'nutzer']);
+  await post('/act', seal({ t: Date.now(), action: { type: 'open-settings' } })); // geht auch aus dem Chat-Bereich
+  assert.deepEqual(applied, [{ type: 'open-settings' }]);
+  help.stop();
+  assert.deepEqual(help.chatLog(), []);
+});

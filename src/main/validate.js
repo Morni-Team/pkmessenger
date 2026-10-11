@@ -554,6 +554,12 @@ const validators = {
     return { code };
   },
   // #156: Wodurch wurde die Fernhilfe beendet? (nur fürs Protokoll)
+  // #160: Nachricht des Nutzers im Hilfe-Chat
+  helpChat(p) {
+    const { text } = obj(p);
+    if (typeof text !== 'string' || !text.trim() || text.length > 300) throw new ValidationError('Nachricht: 1 bis 300 Zeichen.');
+    return { text: text.trim() };
+  },
   helpStop(p) {
     if (p === undefined || p === null) return { reason: 'unbekannt' };
     const { reason = 'unbekannt' } = obj(p);

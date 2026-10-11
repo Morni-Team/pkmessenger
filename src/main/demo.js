@@ -280,7 +280,8 @@ function createDemo() {
     new Promise((resolve) =>
       setTimeout(() => {
         const [ma, mi, pa] = version.split('.').map(Number);
-        const prev = `${ma}.${mi}.${Math.max(0, pa - 1)}`;
+        // bei x.y.0 nicht dieselbe Version doppelt (sonst doppelte Schlüssel in „Was ist neu“)
+        const prev = pa > 0 ? `${ma}.${mi}.${pa - 1}` : `${ma}.${Math.max(0, mi - 1)}.9`;
         const rel = (v, notes, d) => ({ tag_name: `v${v}`, name: `v${v}`, published_at: d, html_url: `https://github.com/Morni-Team/pkmessenger/releases/tag/v${v}`, body: notes.map((n, i) => `* ${n} by @MoinMornhart in https://github.com/Morni-Team/pkmessenger/pull/${40 + i}`).join('\n'), assets: [{ name: 'PKMessenger-Setup.exe', browser_download_url: `https://github.com/Morni-Team/pkmessenger/releases/download/v${v}/PKMessenger-Setup.exe` }] });
         if (url.includes('/releases?'))
           return resolve({ ok: true, json: async () => [rel(version, ['Updates: Was ist neu?, neu installieren', 'Im Hintergrund weiterlaufen', 'Windows Hello zum Entsperren'], new Date().toISOString()), rel(prev, ['Profile anklicken', '@ im Privatchat', 'Unscharfe Namenssuche'], new Date(Date.now() - 3600000).toISOString())] });

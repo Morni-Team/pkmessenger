@@ -68,7 +68,17 @@ function pushView() {
 }
 
 function applyAction(action) {
-  if (currentScreen() === 'workspace') return; // im Chat nie etwas ausführen
+  // #160: „Einstellungen öffnen“ darf der Helfer auch aus dem Chat-Bereich heraus (öffnet nur das Einstellungs-Fenster)
+  if (action.type === 'open-settings') {
+    window.dispatchEvent(new CustomEvent('pk:open-settings', { detail: {} }));
+    return;
+  }
+  if (currentScreen() === 'workspace') return; // im Chat sonst nie etwas ausführen
+  // #160: Zeichnung des Helfers anzeigen (Linie aus Anteilen 0…1) bzw. löschen
+  if (action.type === 'draw' || action.type === 'clear-draw') {
+    window.dispatchEvent(new CustomEvent('help:draw', { detail: action }));
+    return;
+  }
   if (action.type === 'cursor') {
     window.dispatchEvent(new CustomEvent('help:cursor', { detail: action }));
     return;
