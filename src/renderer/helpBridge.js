@@ -116,8 +116,19 @@ function applyAction(action) {
   }
 }
 
+// #164: Der Hauptprozess fragt direkt VOR und NACH jeder Bildaufnahme die AKTUELLE Ansicht ab (statt der bis zu 700 ms
+// alten). Schließt der Nutzer gerade die Einstellungen, passen die beiden nicht zusammen → Bild wird verworfen.
+function freshView() {
+  const v = buildView();
+  // Einstellungs-Fenster muss voll sichtbar sein (nicht gerade beim Ein-/Ausblenden) – sonst scheint der Chat durch
+  const m = document.querySelector('.modal.settings');
+  const fading = m && (Number(getComputedStyle(m).opacity) < 0.99 || Number(getComputedStyle(m.closest('.modal-backdrop') || m).opacity) < 0.99);
+  return { ...v, allowed: fading ? null : v.allowed, at: Date.now() };
+}
+
 export function startHelpBridge() {
   if (timer) return;
+  window.__pkHelpFreshView = freshView;
   window.addEventListener('mousemove', onMouse);
   unAction = api.onHelpAction(applyAction);
   timer = setInterval(pushView, 700);
@@ -125,6 +136,7 @@ export function startHelpBridge() {
 }
 
 export function stopHelpBridge() {
+  delete window.__pkHelpFreshView;
   clearInterval(timer);
   timer = null;
   window.removeEventListener('mousemove', onMouse);
