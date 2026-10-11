@@ -156,8 +156,24 @@ function createSecretFile({ safeStorage, filePath }) {
 }
 
 /** Fehlermeldung des Anbieters verständlich machen – ohne Schlüssel oder Interna preiszugeben. */
+// #119: Lokale Modelle (LM Studio, Ollama, llama.cpp) haben oft ein kleines Kontextfenster. Dann kommt z. B.
+// „request (2939 tokens) exceeds the available context size (2816 tokens)“ – je nach Server mit 400 oder 500.
+const CONTEXT_OVERFLOW = /exceeds? the (available )?context|context (size|length|window)|maximum context|too many tokens|n_ctx|prompt is too long|reduce the length/i;
+function contextError(detail) {
+  const nums = [...String(detail).matchAll(/\((\d+) tokens?\)/g)].map((x) => Number(x[1]));
+  const limit = nums.length >= 2 ? nums[1] : null;
+  return Object.assign(
+    aiError(
+      `Die Anfrage ist zu groß für das Kontextfenster des Modells${limit ? ` (${limit} Tokens)` : ''}.`,
+      'PKMessenger kürzt automatisch. Dauerhaft besser: in LM Studio beim Modell die „Context Length“ erhöhen (z. B. 8192) oder „Parallel“ auf 1 stellen.',
+    ),
+    { contextOverflow: true, contextLimit: limit },
+  );
+}
+
 function describeProviderError(status, body) {
   const detail = String(body?.error?.message || body?.error || body?.message || '').slice(0, 160);
+  if (CONTEXT_OVERFLOW.test(String(body?.error?.message || body?.error || body?.message || ''))) return contextError(String(body?.error?.message || body?.error || body?.message || ''));
   if (status === 401 || status === 403) return aiError('Der KI-Anbieter hat den API-Schlüssel abgelehnt.', 'Schlüssel in den KI-Einstellungen prüfen oder neu eintragen.');
   if (status === 404) return aiError('Modell oder Adresse beim KI-Anbieter nicht gefunden.', `Modellnamen und Adresse prüfen.${detail ? ` (${detail})` : ''}`);
   if (status === 429) return aiError('Der KI-Anbieter bremst gerade (Limit oder Guthaben erreicht).', 'Später erneut versuchen oder Guthaben beim Anbieter prüfen.');
@@ -637,6 +653,11 @@ function createAiManager({ store, secret, service, emit = () => {}, fetchImpl = 
       try {
         return await askNative({ system, user, maxTokens, kind, model, tools, recall });
       } catch (err) {
+        // #119: Kontextfenster zu klein → ohne Werkzeug-Beschreibungen (spart viele Tokens) einfach antworten
+        if (err?.contextOverflow) {
+          logTool({ tool: tools[0], ok: false, detail: 'Kontextfenster zu klein – antworte ohne Werkzeuge' });
+          return ask({ system, user, maxTokens, kind, images, model });
+        }
         if (!err?.toolsUnsupported) throw err;
         noNativeTools.add(toolKey);
         logTool({ tool: tools[0], ok: true, detail: 'Modell kann keine Werkzeuge – nutze Text-Suche' });
@@ -1076,7 +1097,18 @@ function createAiManager({ store, secret, service, emit = () => {}, fetchImpl = 
           if (e?.empty) return '';
           throw e;
         });
-      let text = safeOutput(await tryAsk(user, true));
+      // #119: Passt die Anfrage nicht ins Kontextfenster (kleine lokale Modelle), noch einmal KURZ fragen:
+      // ohne Gedächtnis, ohne Verlauf, ohne Werkzeuge – nur die Frage. Lieber eine kurze Antwort als gar keine.
+      const slimUser = [`${m.author.name} asks: ${(question || '(only mentioned you)').slice(0, 1500)}`, `Current time: ${new Date(now()).toLocaleString('de-DE')}`].join('\n\n');
+      let text = safeOutput(
+        await tryAsk(user, true).catch(async (e) => {
+          if (!e?.contextOverflow) throw e;
+          return askWithTools({ system, user: slimUser, kind: 'reply', web: false, images: [], model: mode?.model || null, maxTokens: 700 }).catch((e2) => {
+            if (e2?.empty) return '';
+            throw e2;
+          });
+        }),
+      );
       // #112: Manche (denkende) Modelle liefern nach dem Entfernen der Gedanken nichts mehr → einmal neu versuchen
       if (!plainText(text).trim()) {
         text = safeOutput(await tryAsk(`${user}\n\n[Your previous answer was empty. Answer the question now directly, without thinking out loud.]`, false));
