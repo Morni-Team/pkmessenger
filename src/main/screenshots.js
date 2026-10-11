@@ -962,6 +962,9 @@ async function runScreenshots(win, dir, { demo, stats, simulate }) {
   await js(win, `document.querySelector('[data-fold="modules"]')?.scrollIntoView({block:'start'})`);
   await wait(300);
   await shoot(win, dir, '87-bot-module');
+  await js(win, `document.querySelector('[data-fold="module-protection"]')?.scrollIntoView({block:'start'})`);
+  await wait(300);
+  await shoot(win, dir, '87b-bot-module-schutz');
   const modState = await js(win, `JSON.stringify([...document.querySelectorAll('.module-card > summary')].map((s) => s.textContent.trim()))`);
   console.log(`[module] ${modState}`);
   console.log(`[ki-modi] ${await js(win, `JSON.stringify({ modi: document.querySelectorAll('.ai-mode').length, name: document.querySelector('.ai-mode input')?.value, wechsler: Boolean([...document.querySelectorAll('.ai-people')].find(p=>p.textContent.includes('Modus wechseln'))), limit: document.querySelector('.ai-responder .ai-limits select')?.value })`)}`);

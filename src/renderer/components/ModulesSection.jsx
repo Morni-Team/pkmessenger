@@ -37,7 +37,8 @@ export default function ModulesSection({ guilds = [], targets = [], toast }) {
 
   return (
     <Fold id="modules" className="ai-card ai-all" title="🧩 Bot-Module" badge={mods ? `${active} an` : null} hint="Zusatzfunktionen für deinen Bot – pro Server einzeln an/aus">
-      <p className="muted small">Kleine Zusatzfunktionen für deinen Bot, pro Server einzeln an- und ausschaltbar. Sie laufen, solange PKMessenger offen ist. Der Bot pingt dabei nie jemanden.</p>
+      <p className="muted small">
+        Zusatzfunktionen für deinen Bot – <b>ganz ohne KI</b>, pro Server einzeln an- und ausschaltbar. Sie laufen, solange PKMessenger offen ist. Der Bot pingt dabei nie jemanden.</p>
       {guilds.length === 0 ? (
         <p className="muted small">Der Bot ist auf keinem Server.</p>
       ) : (
@@ -96,6 +97,63 @@ export default function ModulesSection({ guilds = [], targets = [], toast }) {
               </p>
             </>
           )}
+          {m.id === 'suggestions' && (
+            <>
+              <ChannelSelect label="Vorschlags-Kanal" value={m.config.channelId} channels={channels} onChange={(channelId) => save(m, { config: { ...m.config, channelId } })} />
+              <Check label="Zu jedem Vorschlag einen Thread zum Diskutieren öffnen" checked={m.config.thread} onChange={(thread) => save(m, { config: { ...m.config, thread } })} />
+            </>
+          )}
+          {m.id === 'protection' && (
+            <>
+              <Check label="🔗 Einladungen zu anderen Discord-Servern löschen" checked={m.config.invites} onChange={(invites) => save(m, { config: { ...m.config, invites } })} />
+              <Check label="🔁 Spam löschen (gleiche Nachricht 4× oder 8 Nachrichten in 10 Sekunden)" checked={m.config.spam} onChange={(spam) => save(m, { config: { ...m.config, spam } })} />
+              <div className="settings__row ai-target">
+                <label className="small" htmlFor={`mass-${guildId}`}>📣 Massen-Pings ab</label>
+                <select id={`mass-${guildId}`} value={m.config.massMentions} onChange={(e) => save(m, { config: { ...m.config, massMentions: Number(e.target.value) } })}>
+                  {[0, 3, 5, 8, 10, 20].map((n) => (
+                    <option key={n} value={n}>
+                      {n === 0 ? 'aus' : `${n} Erwähnungen`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="settings__row ai-target">
+                <label className="small" htmlFor={`to-${guildId}`}>⏳ Zusätzlich Timeout</label>
+                <select id={`to-${guildId}`} value={m.config.timeoutMinutes} onChange={(e) => save(m, { config: { ...m.config, timeoutMinutes: Number(e.target.value) } })}>
+                  {[0, 1, 5, 10, 60].map((n) => (
+                    <option key={n} value={n}>
+                      {n === 0 ? 'nein, nur löschen' : `${n} Minute${n === 1 ? '' : 'n'}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="muted small">Server-Admins sind immer ausgenommen. Der Bot braucht dafür die Rechte „Nachrichten verwalten“ (und für Timeouts „Mitglieder im Timeout“).</p>
+            </>
+          )}
+          {m.id === 'starboard' && (
+            <>
+              <ChannelSelect label="Bestenkanal" value={m.config.channelId} channels={channels} onChange={(channelId) => save(m, { config: { ...m.config, channelId } })} />
+              <div className="settings__row ai-target">
+                <label className="small" htmlFor={`stars-${guildId}`}>⭐ Ab wie vielen Sternen</label>
+                <select id={`stars-${guildId}`} value={m.config.threshold} onChange={(e) => save(m, { config: { ...m.config, threshold: Number(e.target.value) } })}>
+                  {[1, 2, 3, 5, 7, 10, 15].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="small">{m.info.posted || 0} Nachrichten im Bestenkanal</p>
+            </>
+          )}
+          {m.id === 'logging' && (
+            <>
+              <ChannelSelect label="Protokoll-Kanal" value={m.config.channelId} channels={channels} onChange={(channelId) => save(m, { config: { ...m.config, channelId } })} />
+              <Check label="🗑 Gelöschte Nachrichten" checked={m.config.deletes} onChange={(deletes) => save(m, { config: { ...m.config, deletes } })} />
+              <Check label="✏️ Bearbeitete Nachrichten (vorher / nachher)" checked={m.config.edits} onChange={(edits) => save(m, { config: { ...m.config, edits } })} />
+              <p className="muted small">⚠ Wähle einen Kanal, den nur dein Team sehen kann. Der Bot kennt nur Nachrichten, die seit dem Start von PKMessenger geschrieben wurden – nichts wird dauerhaft gespeichert.</p>
+            </>
+          )}
         </Fold>
       ))}
     </Fold>
@@ -137,5 +195,28 @@ function AutoReplyEditor({ m, onSave }) {
         )}
       </div>
     </div>
+  );
+}
+
+function ChannelSelect({ label, value, channels, onChange }) {
+  return (
+    <div className="settings__row ai-target">
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">– {label} wählen –</option>
+        {channels.map((c) => (
+          <option key={c.id} value={c.id}>
+            #{c.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function Check({ label, checked, onChange }) {
+  return (
+    <label className="composer__ping">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> {label}
+    </label>
   );
 }
