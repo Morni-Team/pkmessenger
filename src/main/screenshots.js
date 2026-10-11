@@ -946,6 +946,17 @@ async function runScreenshots(win, dir, { demo, stats, simulate }) {
   await js(win, `document.querySelector('.ai-modes')?.scrollIntoView({block:'center'})`);
   await wait(300);
   await shoot(win, dir, '84-ki-modi');
+  // #131: Gefahren-Schalter „KI darf den Server mitverwalten“ – Bestätigung zeigen, dann abbrechen
+  await js(win, `document.querySelector('[data-fold="ai-admin"]')?.setAttribute('open', '')`);
+  await wait(200);
+  await js(win, `document.querySelector('[data-fold="ai-admin"] input[type=checkbox]')?.click()`);
+  await wait(300);
+  await js(win, `document.querySelector('[data-fold="ai-admin"]')?.scrollIntoView({block:'center'})`);
+  await wait(300);
+  await shoot(win, dir, '84b-ki-server-verwaltung');
+  console.log(`[ki-admin] Bestätigung sichtbar: ${await js(win, `Boolean(document.querySelector('.ai-danger__confirm'))`)}`);
+  await clickText('.ai-danger__confirm .btn', 'Abbrechen');
+  await wait(200);
   // #131: Bot-Module – Auto-Antwort anlegen, Zählen einschalten
   await js(win, `document.querySelectorAll('.settings details[data-fold]').forEach((d) => (d.open = true))`);
   await wait(300);

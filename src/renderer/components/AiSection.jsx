@@ -408,6 +408,47 @@ function ToolsInfo({ cfg }) {
   );
 }
 
+// #131: KI darf (auf Wunsch von Admins) den Server mitverwalten – Gefahren-Schalter pro Server, ab Werk aus
+function AdminGuilds({ r, set, guilds }) {
+  const [ask, setAsk] = useState(null); // Server, der gerade bestätigt werden soll
+  const list = r.adminGuilds || [];
+  const toggle = (g, on) => (on ? setAsk(g) : set({ adminGuilds: list.filter((id) => id !== g.id) }));
+  return (
+    <Fold id="ai-admin" className="ai-subfold ai-danger" title="🛠 KI darf den Server mitverwalten" badge={list.length ? `${list.length} Server` : 'aus'} hint="Gefährlich: Die KI darf auf Bitte eines Admins Kanäle anlegen, Nachrichten löschen und Timeouts geben">
+      <p className="muted small">
+        Schreibt ein <b>Server-Admin</b> (oder eine Person, die Modi wechseln darf) den Bot an, kann die KI auf Bitte z. B. Kanäle anlegen/umbenennen, Nachrichten in den Kanal posten, löschen, anpinnen oder kurze Timeouts (max. 60 Min.) geben. Normale Mitglieder können das <b>nie</b> auslösen.
+      </p>
+      <p className="muted small">🔒 Nie: bannen, kicken, Kanäle löschen, Rollen/Rechte ändern. Höchstens 15 Aktionen pro Stunde und Server. Jede Aktion steht im Werkzeug-Protokoll. Funktioniert nur mit Modellen, die Werkzeuge können.</p>
+      {guilds.map((g) => (
+        <label key={g.id} className="composer__ping">
+          <input type="checkbox" checked={list.includes(g.id)} onChange={(e) => toggle(g, e.target.checked)} /> 🖥 {g.name}
+        </label>
+      ))}
+      {ask && (
+        <div className="ai-danger__confirm" role="alertdialog" aria-label="Gefahr bestätigen">
+          <p className="warn small">
+            ⚠ <b>Gefahr:</b> Die KI kann auf „{ask.name}“ Fehler machen – z. B. die falsche Nachricht löschen oder die falsche Person stummschalten. Eine KI kann sich auch irren oder austricksen lassen. Nur einschalten, wenn du das Risiko verstehst.
+          </p>
+          <div className="settings__row">
+            <button className="btn btn--ghost btn--small" onClick={() => setAsk(null)}>
+              Abbrechen
+            </button>
+            <button
+              className="btn btn--danger btn--small"
+              onClick={() => {
+                set({ adminGuilds: [...new Set([...list, ask.id])] });
+                setAsk(null);
+              }}
+            >
+              Ja, ich verstehe das Risiko
+            </button>
+          </div>
+        </div>
+      )}
+    </Fold>
+  );
+}
+
 function ResponderSection({ cfg, targets, guilds, toast }) {
   const [r, setR] = useState(cfg.responder);
   const [busy, setBusy] = useState(false);
@@ -485,6 +526,7 @@ function ResponderSection({ cfg, targets, guilds, toast }) {
             placeholder="z. B. Du bist Claw, locker und hilfsbereit. Du kennst die Server-Regeln: …"
           />
           <ModesEditor r={r} set={set} guilds={guilds} />
+          <AdminGuilds r={r} set={set} guilds={guilds} />
           <label className="composer__ping">
             <input type="checkbox" checked={r.context} onChange={(e) => set({ context: e.target.checked })} /> Letzte 20 Nachrichten als Kontext mitschicken
           </label>

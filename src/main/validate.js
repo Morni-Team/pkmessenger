@@ -266,7 +266,7 @@ const validators = {
     return { provider, baseUrl: aiBaseUrl(baseUrl) };
   },
   aiResponder(p) {
-    const { enabled, channelIds, dms, allowUsers, blockUsers, instructions, context, notify, web = false, quietWhenOpen = true, memory = false, memoryBudget = 3000, memoryAuto = true, modes = [], activeModes = {}, modeUsers = [], replyLimit = 30 } = obj(p);
+    const { enabled, channelIds, dms, allowUsers, blockUsers, instructions, context, notify, web = false, quietWhenOpen = true, memory = false, memoryBudget = 3000, memoryAuto = true, modes = [], activeModes = {}, modeUsers = [], replyLimit = 30, adminGuilds = [] } = obj(p);
     if (typeof web !== 'boolean' || typeof quietWhenOpen !== 'boolean' || typeof memory !== 'boolean' || typeof memoryAuto !== 'boolean') throw new ValidationError('Ungültiger Schalter.');
     if (![1000, 3000, 8000, 16000].includes(memoryBudget)) throw new ValidationError('Ungültige Gedächtnisgröße.');
     for (const [k, v] of Object.entries({ enabled, dms, context, notify })) if (typeof v !== 'boolean') throw new ValidationError(`Ungültiges Feld "${k}".`);
@@ -301,6 +301,8 @@ const validators = {
     const ids = new Set(cleanModes.map((x) => x.id));
     const cleanActive = Object.fromEntries(Object.entries(activeModes).filter(([k, v]) => isSnowflake(k) && ids.has(v)).slice(0, 500));
     if (!Number.isInteger(replyLimit) || replyLimit < 0 || replyLimit > 500) throw new ValidationError('Antworten pro Stunde: 0 (unbegrenzt) bis 500.');
+    // #131: Server, auf denen die KI (auf Wunsch von Admins) mitverwalten darf – Gefahren-Schalter, ab Werk leer
+    if (!Array.isArray(adminGuilds) || adminGuilds.length > 50) throw new ValidationError('Ungültige Server-Liste.');
     return {
       enabled,
       channelIds: [...new Set(channelIds.map((c) => snowflake(c, 'channelIds')))],
@@ -319,6 +321,7 @@ const validators = {
       activeModes: cleanActive,
       modeUsers: people(modeUsers, 'modeUsers'),
       replyLimit,
+      adminGuilds: [...new Set(adminGuilds.map((g) => snowflake(g, 'adminGuilds')))],
     };
   },
   aiLimits(p) {

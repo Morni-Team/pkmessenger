@@ -289,6 +289,7 @@ const autostart = {
 // Bot-Module (Beta, #131): Auto-Antworten, Zählen, Level – pro Server an/aus, ab Werk alles aus
 const botModules = createBotModules({ store, service, logger });
 const ai = createAiManager({
+  logger,
   store,
   service,
   emit: broadcast,
