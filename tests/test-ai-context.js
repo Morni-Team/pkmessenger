@@ -80,3 +80,32 @@ test('#131 Zusammenfassen mit kleinem Kontext: stückweise, dann zusammengeführ
   assert.ok(asked.length >= 3); // erst zu groß, dann in Stücken, dann zusammengeführt
   assert.ok(asked.some((u) => /merge these parts/.test(u)));
 });
+
+test('#119 Gedächtnis-Pflege: alle 10 Min. wird die Person mit dem größten Gedächtnis zusammengefasst', async () => {
+  const data = {};
+  const store = { get: () => ({ ...data }), set: (k, v) => (data[k] = v) };
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '- kurz' } }] }) });
+  let raw = null;
+  let t = 10_000_000;
+  const memory = createMemory({ vault: { get: () => raw, set: (v) => (raw = v), clear: () => (raw = null) }, now: () => t });
+  for (let i = 0; i < 12; i += 1) memory.remember('500000000000000001', 'Klein', 'hi '.repeat(20), 'ok');
+  for (let i = 0; i < 12; i += 1) memory.remember('500000000000000002', 'Gross', 'erzähl '.repeat(200), 'ok '.repeat(50));
+  const ai = createAiManager({ store, secret: { has: () => false, get: () => null }, service: { getStatus: () => ({ state: 'ready', bot: null }) }, fetchImpl, memory, now: () => t });
+  ai.setConfig({ enabled: true, provider: 'openai', baseUrl: 'http://localhost:1234/v1', model: 'm' });
+  ai.setResponder(validators.aiResponder({ enabled: true, channelIds: [], dms: false, allowUsers: [], blockUsers: [], instructions: '', context: false, notify: false, memory: true, memoryBudget: 1000 }));
+  const before = memory.list().find((p) => p.name === 'Gross').tokens;
+  assert.ok(before > 1000);
+  await ai.tick();
+  const after = memory.list().find((p) => p.name === 'Gross');
+  assert.ok(after.tokens < before, 'Gross wurde nicht zusammengefasst');
+  assert.equal(memory.view('500000000000000002').summary, '- kurz');
+  assert.equal(memory.view('500000000000000001').summary, ''); // Klein liegt unter dem Budget
+  // nicht öfter als alle 10 Minuten
+  for (let i = 0; i < 12; i += 1) memory.remember('500000000000000002', 'Gross', 'mehr '.repeat(200), 'ok');
+  const mid = memory.list().find((p) => p.name === 'Gross').tokens;
+  await ai.tick();
+  assert.equal(memory.list().find((p) => p.name === 'Gross').tokens, mid);
+  t += 10 * 60 * 1000 + 1;
+  await ai.tick();
+  assert.ok(memory.list().find((p) => p.name === 'Gross').tokens < mid);
+});

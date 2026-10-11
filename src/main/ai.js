@@ -845,7 +845,35 @@ function createAiManager({ store, secret, service, emit = () => {}, fetchImpl = 
       }
       done.push(await runJob({ id: j.id }).catch((e) => ({ ok: false, message: e.message })));
     }
+    await memoryCare(cfg);
     return done;
+  }
+
+  // #119: Gedächtnis-Pflege im Hintergrund – alle 10 Minuten die Person mit dem GRÖSSTEN Gedächtnis zusammenfassen,
+  // wenn sie über dem Budget liegt (nicht nur die Person, die gerade schreibt). Immer nur eine auf einmal, nie parallel.
+  const MEMORY_CARE_MS = 10 * 60 * 1000;
+  let lastCare = 0;
+  let caring = false;
+  async function memoryCare(cfg) {
+    const r = cfg.responder;
+    if (!memory || !r.memory || r.memoryAuto === false || caring || now() - lastCare < MEMORY_CARE_MS) return null;
+    lastCare = now();
+    const budget = r.memoryBudget || 3000;
+    const biggest = memory
+      .list()
+      .filter((p) => p.tokens > budget && !(p.lastCompact && !p.lastCompact.ok && now() - p.lastCompact.at < 60 * 60 * 1000))
+      .sort((a, b) => b.tokens - a.tokens)[0];
+    if (!biggest) return null;
+    caring = true;
+    try {
+      const res = await memory.compact(biggest.userId, budget, summarizeSmart);
+      if (res.compacted) emit('ai:changed', {});
+      return { userId: biggest.userId, ...res };
+    } catch {
+      return null;
+    } finally {
+      caring = false;
+    }
   }
 
   /** Bilder von Discords Servern laden (nur Discord-CDN, max. 5 MB) → base64 für sehende Modelle. */
