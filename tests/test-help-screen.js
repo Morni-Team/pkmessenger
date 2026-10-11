@@ -132,3 +132,46 @@ test('#160 Hilfe-Chat: Helfer-Nachricht kommt als Chat an (nicht als Klick), Nut
   help.stop();
   assert.deepEqual(help.chatLog(), []);
 });
+
+test('#161 Scrollen am Mauspunkt geprüft; Maus trägt den Helfer-Namen; unverändertes Bild wird nicht erneut geschickt', async () => {
+  const view = { screen: 'settings', fields: [] };
+  assert.equal(allowHelperAction({ type: 'scroll', dir: 'down', x: 0.5, y: 0.7 }, { view }).ok, true);
+  assert.equal(allowHelperAction({ type: 'scroll', dir: 'down' }, { view }).ok, true);
+  assert.equal(allowHelperAction({ type: 'scroll', dir: 'down', x: 4, y: 0.7 }, { view }).ok, false);
+  assert.equal(allowHelperAction({ type: 'scroll', dir: 'down', x: 0.5, y: 0.5 }, { view: { screen: 'workspace' } }).ok, false); // im Chat nie
+
+  const nacl = require('tweetnacl');
+  const { createHelp } = require('../src/main/help');
+  const applied = [];
+  let shots = 0;
+  const help = createHelp({
+    emit: (t, p) => t === 'help:pending' && !p.done && setImmediate(() => help.decide({ id: p.id, allow: true })),
+    getView: () => ({ screen: 'settings', allowed: { x: 0, y: 0, w: 1, h: 1 }, fields: [] }),
+    applyAction: (a) => applied.push(a),
+    captureScreen: async () => ((shots += 1), { img: 'data:image/jpeg;base64,AAAA', w: 10, h: 10 }),
+    getRelay: () => null,
+    hostName: 'pc.local',
+    port: 0,
+    bindHost: '127.0.0.1',
+    lanAddresses: () => ['127.0.0.1'],
+  });
+  const r = await help.request();
+  const key = new Uint8Array(Buffer.from(new URL(r.url).hash.replace('#c=', ''), 'base64url'));
+  const seal = (obj) => {
+    const n = nacl.randomBytes(24);
+    return { n: Buffer.from(n).toString('base64'), c: Buffer.from(nacl.secretbox(Buffer.from(JSON.stringify(obj)), n, key)).toString('base64') };
+  };
+  const open = (m) => JSON.parse(Buffer.from(nacl.secretbox.open(new Uint8Array(Buffer.from(m.c, 'base64')), new Uint8Array(Buffer.from(m.n, 'base64')), key)).toString());
+  const base = `http://127.0.0.1:${help._test.handleAddress().port}`;
+  const post = async (p, body) => (await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  await post('/pair', { code: r.code, ...seal({ name: 'Alex', t: Date.now() }) });
+  await post('/act', seal({ t: Date.now(), action: { type: 'cursor', x: 0.4, y: 0.6 } }));
+  assert.deepEqual(applied[0], { type: 'cursor', x: 0.4, y: 0.6, name: 'Alex' });
+  const first = open(await post('/screen', seal({ t: Date.now(), have: 0 })));
+  assert.equal(first.screen.img, 'data:image/jpeg;base64,AAAA');
+  await new Promise((x) => setTimeout(x, 300));
+  const again = open(await post('/screen', seal({ t: Date.now(), have: first.screen.id })));
+  assert.deepEqual(again.screen, { same: true, id: first.screen.id }); // nur „gleich“ statt Bild
+  assert.ok(shots >= 2);
+  help.stop();
+});

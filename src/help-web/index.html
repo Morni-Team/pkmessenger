@@ -31,6 +31,10 @@
       .muted { color: var(--muted); font-size: 13px; }
       .warn { color: var(--warn); }
       .shot { position: relative; margin: 8px 0; }
+      .shot__inner { position: relative; }
+      /* #160: Vollbild – Rahmen hat genau das Seitenverhältnis des Bildes, damit Maus/Zeichnung passen */
+      .shot:fullscreen { display: flex; align-items: center; justify-content: center; background: #000; margin: 0; }
+      .shot:fullscreen .shot__inner { width: min(100vw, calc(100vh * var(--ar, 1.77))); }
       .shot img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); cursor: crosshair; user-select: none; }
       #shotcursor { position: absolute; width: 18px; height: 18px; border: 2px solid var(--accent); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; transition: left 0.15s, top 0.15s; box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.25); }
       #fieldlist summary { cursor: pointer; margin: 6px 0; }
@@ -73,12 +77,15 @@
           <button id="opensettings" title="Öffnet beim Nutzer die Einstellungen">⚙️ Einstellungen öffnen</button>
           <button id="drawmode" title="Auf das Bild zeichnen – der Nutzer sieht es in seiner App">✏️ Zeichnen</button>
           <button id="drawclear" title="Zeichnungen beim Nutzer löschen">🧽 Zeichnung löschen</button>
+          <button id="fullscreen" title="Bild im Vollbild (Esc beendet)">⛶ Vollbild</button>
         </div>
         <!-- #158: echtes Bild der App (Chats & Geheimnisse sind schon am PC geschwärzt). Klick = Knopf an dieser Stelle -->
         <div id="shotwrap" class="shot hidden">
-          <img id="shot" alt="Bild der App (geschwärzt)" draggable="false" />
-          <div id="shotcursor" class="hidden" title="Maus des Nutzers"></div>
-          <svg id="shotdraw" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="shot__inner">
+            <img id="shot" alt="Bild der App (geschwärzt)" draggable="false" />
+            <div id="shotcursor" class="hidden" title="Maus des Nutzers"></div>
+            <svg id="shotdraw" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
         </div>
         <p id="shothint" class="muted"></p>
         <details id="fieldlist">

@@ -77,7 +77,8 @@ const ALLOWED = {
   },
   // zu einem Einrichtungs-Schritt scrollen / Hinweis zeigen
   highlight: (a) => typeof a.target === 'string' && a.target.length <= 80,
-  scroll: (a) => ['up', 'down', 'top', 'bottom'].includes(a.dir),
+  // #161: optional mit Mausposition (Anteil 0…1) → scrollt den Bereich unter der Maus
+  scroll: (a) => ['up', 'down', 'top', 'bottom'].includes(a.dir) && (a.x === undefined || (unit(a.x) && unit(a.y))),
   cursor: (a) => unit(a.x) && unit(a.y), // #158: Anteil der Fenstergröße
   // #160: auf dem Bild zeichnen (Linie aus max. 200 Punkten, Anteile 0…1) bzw. Zeichnung löschen
   draw: (a) => Array.isArray(a.points) && a.points.length >= 2 && a.points.length <= 200 && a.points.every((p) => Array.isArray(p) && p.length === 2 && unit(p[0]) && unit(p[1])),
