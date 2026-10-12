@@ -163,7 +163,14 @@
       b.className = 'field' + (f.secret ? ' secret' : '');
       b.textContent = f.label || '(ohne Beschriftung)';
       if (f.secret) { b.disabled = true; b.title = 'Sicherheits-Feld – bedient nur der Nutzer'; }
-      else b.onclick = function () { call('/act', { action: { type: 'click', target: f.id } }); };
+      else b.onclick = function () {
+        if (f.isText) {
+          var txt = prompt('Eingabe für ' + (f.label || 'Feld') + ':', '');
+          if (txt !== null) call('/act', { action: { type: 'type', target: f.id, text: txt } });
+        } else {
+          call('/act', { action: { type: 'click', target: f.id } });
+        }
+      };
       box.appendChild(b);
     });
   }
@@ -248,8 +255,14 @@
       .filter(function (f) { return f.rect && !f.secret && p.x >= f.rect.x && p.x <= f.rect.x + f.rect.w && p.y >= f.rect.y && p.y <= f.rect.y + f.rect.h; })
       .sort(function (a, b) { return a.rect.w * a.rect.h - b.rect.w * b.rect.h; })[0];
     if (!hit) { $('shothint').textContent = 'Dort ist kein Knopf, den du drücken darfst.'; return; }
-    $('shothint').textContent = 'Klick auf: ' + (hit.label || '(Knopf)');
-    call('/act', { action: { type: 'click', target: hit.id } });
+    if (hit.isText) {
+      $('shothint').textContent = 'Eingabe für: ' + (hit.label || '(Feld)');
+      var txt = prompt('Eingabe für ' + (hit.label || 'Feld') + ':', '');
+      if (txt !== null) call('/act', { action: { type: 'type', target: hit.id, text: txt } });
+    } else {
+      $('shothint').textContent = 'Klick auf: ' + (hit.label || '(Knopf)');
+      call('/act', { action: { type: 'click', target: hit.id } });
+    }
   });
   // Eigene Maus dem Nutzer zeigen (höchstens 5× pro Sekunde)
   var lastMove = 0;

@@ -52,7 +52,7 @@ function redactView(view = {}) {
     settings: view.settings ? scrub(view.settings) : null,
     // Sichtbare Knöpfe/Labels: nur deren Beschriftung, Geheimnis-Felder als „verborgen“ markiert
     fields: Array.isArray(view.fields)
-      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || f.secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`), rect: inChat ? null : rectOf(f.rect) }))
+      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || f.secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`), isText: Boolean(f.isText), rect: inChat ? null : rectOf(f.rect) }))
       : [],
     // #158: Mauszeiger als Anteil (0…1) – passt beim Helfer auf das Bild
     cursor: !inChat && view.cursor && unit(view.cursor.x) && unit(view.cursor.y) ? { x: Math.round(view.cursor.x * 1000) / 1000, y: Math.round(view.cursor.y * 1000) / 1000 } : null,

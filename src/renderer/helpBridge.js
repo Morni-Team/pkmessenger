@@ -38,7 +38,8 @@ function collectFields() {
     el.setAttribute('data-help-id', id);
     const label = (el.getAttribute('aria-label') || el.textContent || el.placeholder || el.value || '').trim().slice(0, 80);
     const secret = el.type === 'password';
-    return { id, label, secret, rect: norm(el.getBoundingClientRect()) };
+    const isText = el.tagName === 'INPUT' && el.type !== 'radio' && el.type !== 'checkbox' && el.type !== 'button' && el.type !== 'submit' && el.type !== 'reset' || el.tagName === 'TEXTAREA';
+    return { id, label, secret, isText, rect: norm(el.getBoundingClientRect()) };
   });
 }
 
