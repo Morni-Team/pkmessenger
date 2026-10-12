@@ -38,8 +38,8 @@ test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, 
     screen: 'setup',
     setup: { step: 'intent', botToken: 'MTxx.secret' },
     fields: [
-      { id: 'token-input', label: 'Bot-Token einfügen' },
-      { id: 'wizard-next', label: 'Weiter' },
+      { id: 'token-input', label: 'Bot-Token einfügen', isText: true },
+      { id: 'wizard-next', label: 'Weiter', isText: false },
     ],
     cursor: { x: 0.12345, y: 0.40216 },
   });
@@ -48,8 +48,11 @@ test('Einrichtungs-Ansicht: Status sichtbar, Token-Feld als verborgen markiert, 
   assert.equal(v.setup.step, 'intent');
   const tokenField = v.fields.find((f) => f.id === 'token-input');
   assert.equal(tokenField.secret, true);
+  assert.equal(tokenField.isText, true);
   assert.match(tokenField.label, /verborgen/);
-  assert.equal(v.fields.find((f) => f.id === 'wizard-next').secret, false);
+  const nextField = v.fields.find((f) => f.id === 'wizard-next');
+  assert.equal(nextField.secret, false);
+  assert.equal(nextField.isText, false);
   assert.deepEqual(v.cursor, { x: 0.123, y: 0.402 });
 });
 
