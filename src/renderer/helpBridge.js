@@ -1,6 +1,7 @@
 // Fernhilfe (Issue #79), Renderer-Seite: meldet laufend, was auf dem Bildschirm zu sehen ist (geschwärzt wird erst
 // in Main), und führt erlaubte Helfer-Aktionen aus. Im Chat-Bereich wird NICHTS gemeldet und NICHTS ausgeführt.
 import { api } from './api';
+import { looksSecret } from '../shared/help-redact';
 
 let timer = null;
 let unAction = null;
@@ -12,7 +13,16 @@ const onMouse = (e) => {
   lastCursor = { x: e.clientX / innerWidth, y: e.clientY / innerHeight };
 };
 // Was im Bild für den Helfer IMMER geschwärzt wird (zusätzlich zu allem außerhalb des erlaubten Bereichs)
-const PRIVATE = 'input[type=password], [data-private], .toast, .toasts, .ai-memory, .ai-preview, .ai-memory-row, .ctx-menu, .profile-card';
+const PRIVATE = 'input[type=password], [data-private], .login-code, .toast, .toasts, .ai-memory, .ai-preview, .ai-memory-row, .ctx-menu, .profile-card';
+
+// #170: Ein Feld ist geheim, wenn es ein Passwort-Feld ist, in einem [data-private]-Bereich liegt, nach Token/Passwort
+// heißt – oder wenn sein INHALT wie ein Token aussieht (z. B. aufgedeckt oder in ein normales Feld eingefügt).
+const SECRET_NAME = /token|passw|secret|schlüssel|key|code/i;
+function isSecretEl(el) {
+  if (el.type === 'password' || el.closest('[data-private]')) return true;
+  if (SECRET_NAME.test(`${el.id} ${el.name || ''} ${el.getAttribute('autocomplete') || ''} ${el.getAttribute('aria-label') || ''} ${el.placeholder || ''}`)) return true;
+  return 'value' in el && looksSecret(String(el.value || ''));
+}
 
 function currentScreen() {
   // #104: Die Einstellungen öffnen als Modal ÜBER dem Workspace (.layout bleibt dahinter). Darum zuerst auf die
@@ -36,8 +46,10 @@ function collectFields() {
   return els.map((el, i) => {
     const id = `h${i}`;
     el.setAttribute('data-help-id', id);
-    const label = (el.getAttribute('aria-label') || el.textContent || el.placeholder || el.value || '').trim().slice(0, 80);
-    const secret = el.type === 'password';
+    // Eingetippte Werte gehen nie als Beschriftung raus – nur Beschriftung/Platzhalter (#170)
+    const typed = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA';
+    const label = (el.getAttribute('aria-label') || (typed ? '' : el.textContent) || el.placeholder || '').trim().slice(0, 80);
+    const secret = isSecretEl(el);
     const isText = el.tagName === 'INPUT' && el.type !== 'radio' && el.type !== 'checkbox' && el.type !== 'button' && el.type !== 'submit' && el.type !== 'reset' || el.tagName === 'TEXTAREA';
     return { id, label, secret, isText, rect: norm(el.getBoundingClientRect()) };
   });
@@ -56,7 +68,10 @@ function allowedRect(screen) {
 function buildView() {
   const screen = currentScreen();
   const inChat = screen === 'workspace';
-  const masks = inChat ? [] : [...document.querySelectorAll(PRIVATE)].filter(visible).slice(0, 60).map((el) => norm(el.getBoundingClientRect()));
+  const priv = inChat ? [] : [...document.querySelectorAll(PRIVATE)];
+  // #170: aufgedeckte/eingefügte Token in normalen Feldern ebenfalls schwärzen
+  if (!inChat) priv.push(...[...document.querySelectorAll('input, textarea')].filter((el) => !el.matches(PRIVATE) && isSecretEl(el)));
+  const masks = priv.filter(visible).slice(0, 60).map((el) => norm(el.getBoundingClientRect()));
   return { screen, fields: inChat ? [] : collectFields(), cursor: lastCursor, allowed: inChat ? null : allowedRect(screen), masks };
 }
 

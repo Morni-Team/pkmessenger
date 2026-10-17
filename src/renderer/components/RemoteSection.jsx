@@ -122,7 +122,7 @@ export default function RemoteSection({ toast }) {
       )}
       {pair && (
         <div className="remote__pair">
-          <img src={pair.qr} alt="QR-Code zum Koppeln" width="220" height="220" />
+          <img src={pair.qr} alt="QR-Code zum Koppeln" width="220" height="220" data-private />
           <div>
             <p className="small">
               Mit dem Handy scannen{pair.relayUrl ? ' – geht überall (über deinen Relay)' : ' (gleiches WLAN)'}. Gültig noch <b>{Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</b> Minuten, nur <b>einmal</b> benutzbar.

@@ -36,6 +36,10 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     if (!remote) throw Object.assign(new Error('Fernzugriff ist auf diesem Gerät nicht verfügbar.'), { code: 'NOT_FOUND' });
     return remote;
   };
+  const notDuringHelp = () => {
+    const hs = help?.status?.();
+    if (hs?.connected || hs?.waitingForHelper) throw Object.assign(new Error('Während der Fernhilfe geht das nicht – bitte erst die Hilfe beenden.'), { code: 'VALIDATION' });
+  };
   return {
     // Token: Oberfläche bekommt NIE den Token zurück, nur Status/Bot-ID.
     'pk:token-info': () => (tokenStore ? tokenStore.info() : { stored: false, demo: true }),
@@ -46,6 +50,8 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     },
     // Anmelden per Link/QR (JoniMoni #77): verschlüsselter Link + Code, der nur auf diesem Bildschirm steht
     'pk:token-share': async () => {
+      // #170: Während der Fernhilfe nie – Link/QR + Code zusammen wären der Bot-Token für den Helfer
+      notDuringHelp();
       const t = requireTokens().load();
       if (t.status !== 'ok') throw Object.assign(new Error('Hier ist noch kein Bot-Token gespeichert.'), { code: 'VALIDATION' });
       return sealToken(t.token);
@@ -254,7 +260,10 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     'pk:remote-set-password': (p) => requireRemote().setPassword(validators.remotePassword(p)),
     'pk:remote-enable': (p) => requireRemote().setEnabled(validators.backgroundSet(p)),
     'pk:remote-options': (p) => requireRemote().setOptions(validators.remoteOptions(p)),
-    'pk:remote-pair': () => requireRemote().createPairingWithQr(),
+    'pk:remote-pair': () => {
+      notDuringHelp(); // #170: Kopplungs-QR nie, solange ein Helfer zuschaut
+      return requireRemote().createPairingWithQr();
+    },
     'pk:remote-cancel-pair': (p) => requireRemote().cancelPairing(validators.remoteId(p)),
     'pk:remote-decide': (p) => requireRemote().decide(validators.remoteDecide(p)),
     'pk:remote-remove-device': (p) => requireRemote().removeDevice(validators.remoteId(p)),

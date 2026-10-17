@@ -12,10 +12,15 @@
 const SECRET_FIELD = /token|passwor|passwort|secret|schlüssel|key|code|\.env/i;
 const BLACK = '███████';
 
+// #170: „Helfer kann den Bot-Token sehen, wenn der Nutzer ihn aufdeckt“ – darum zusätzlich am INHALT erkennen:
+// Discord-Bot-Token (drei Teile mit Punkten), Anmelde-Links und lange Zufalls-Zeichenketten (Schlüssel, Codes).
+const TOKEN_LIKE = /[A-Za-z\d_-]{20,}\.[A-Za-z\d_-]{5,}\.[A-Za-z\d_-]{20,}|#d=[A-Za-z\d_-]{16,}|[A-Za-z\d_+/=-]{40,}/;
+const looksSecret = (text) => typeof text === 'string' && TOKEN_LIKE.test(text);
+
 /** Nachrichten/Namen/Geheimnisse aus einem Wert entfernen. Tief, aber begrenzt (kein Endlos-Objekt). */
 function scrub(value, depth = 0) {
   if (value == null || depth > 6) return value;
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return looksSecret(value) ? BLACK : value;
   if (Array.isArray(value)) return value.slice(0, 200).map((v) => scrub(v, depth + 1));
   if (typeof value !== 'object') return value;
   const out = {};
@@ -52,7 +57,10 @@ function redactView(view = {}) {
     settings: view.settings ? scrub(view.settings) : null,
     // Sichtbare Knöpfe/Labels: nur deren Beschriftung, Geheimnis-Felder als „verborgen“ markiert
     fields: Array.isArray(view.fields)
-      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || f.secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`), isText: Boolean(f.isText), rect: inChat ? null : rectOf(f.rect) }))
+      ? view.fields.slice(0, 100).map((f) => {
+          const secret = Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || looksSecret(String(f.label || ''));
+          return { id: String(f.id || ''), label: secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret, isText: Boolean(f.isText), rect: inChat ? null : rectOf(f.rect) };
+        })
       : [],
     // #158: Mauszeiger als Anteil (0…1) – passt beim Helfer auf das Bild
     cursor: !inChat && view.cursor && unit(view.cursor.x) && unit(view.cursor.y) ? { x: Math.round(view.cursor.x * 1000) / 1000, y: Math.round(view.cursor.y * 1000) / 1000 } : null,
@@ -101,11 +109,13 @@ function allowHelperAction(action, { view = {}, enabled = true, controlAllowed =
   if (!controlAllowed && a.type !== 'chat') return { ok: false, reason: 'Der Nutzer hat das Mitsteuern verboten (nur Zusehen).' };
   // #160: Chat und „Einstellungen öffnen“ gehen immer – alles andere nicht im Chat-Bereich
   const anywhere = a.type === 'chat' || a.type === 'open-settings';
-  if (!anywhere && redactView(view).hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
+  // #170: gegen die GESCHWÄRZTE Ansicht prüfen – dort sind auch Felder mit Token-Inhalt oder -Beschriftung geheim
+  const safe = redactView(view);
+  if (!anywhere && safe.hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
   const check = ALLOWED[a.type];
   if (!check) return { ok: false, reason: 'Diese Aktion ist nicht erlaubt.' };
   if (SECRET_FIELD.test(String(a.target || ''))) return { ok: false, reason: 'Sicherheits-Felder bedient nur der Nutzer selbst.' };
-  return check(a, view) ? { ok: true } : { ok: false, reason: 'Ziel nicht erlaubt oder nicht sichtbar.' };
+  return check(a, safe) ? { ok: true } : { ok: false, reason: 'Ziel nicht erlaubt oder nicht sichtbar.' };
 }
 
-module.exports = { redactView, allowHelperAction, scrub, SECRET_FIELD, BLACK };
+module.exports = { redactView, allowHelperAction, scrub, looksSecret, SECRET_FIELD, BLACK };
