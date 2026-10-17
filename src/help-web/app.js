@@ -188,7 +188,9 @@
       renderChat(out.chat);
       canControl = Boolean(out.control);
       // #158: echtes Bild der App holen (nicht über die Vermittler – zu groß dafür)
-      var wantShot = out.screen && !v.hidden;
+      // #170: im Chat-Bereich nur, wenn der Nutzer es erlaubt (Bild kommt dann stark verpixelt)
+      var wantShot = out.screen && (!v.hidden || out.chats);
+      chatPixel = Boolean(v.hidden && out.chats);
       var next = function () { setTimeout(loop, direct && direct.mode === 'vermittler' ? 2000 : 900); };
       if (!wantShot) {
         shotWanted = false;
@@ -207,6 +209,7 @@
   }
 
   var shotWanted = false;
+  var chatPixel = false;
   var shotLoopRunning = false;
   var shotId = 0;
   function shotLoop() {
@@ -222,7 +225,8 @@
         $('shot').src = shot.img;
         show($('shotwrap'), true);
         placeCursor(lastView);
-        if (!$('shothint').textContent) $('shothint').textContent = canControl ? 'Klick ins Bild = Klick auf den Knopf an dieser Stelle. Mausrad = scrollen. Schwarze Flächen sind privat.' : 'Nur Zusehen. Schwarze Flächen sind privat.';
+        if (chatPixel) $('shothint').textContent = '💬 Chat-Bereich – absichtlich stark verpixelt: Namen und Nachrichten sind nicht lesbar. Bedienen geht hier nicht.';
+        else if (!$('shothint').textContent || /^💬/.test($('shothint').textContent)) $('shothint').textContent = canControl ? 'Klick ins Bild = Klick auf den Knopf an dieser Stelle. Mausrad = scrollen. Schwarze Flächen sind privat.' : 'Nur Zusehen. Schwarze Flächen sind privat.';
       } else {
         show($('shotwrap'), false);
         shotWanted = false;
@@ -312,7 +316,7 @@
   });
 
   // ---- #170: Rechte anzeigen, Scroll-Knöpfe, Protokoll, Prüfung ----
-  var PERM_TEXT = { screen: 'Bild sehen', control: 'mithelfen', logs: 'Protokoll', tests: 'Prüfen' };
+  var PERM_TEXT = { screen: 'Bild sehen', chats: 'Chat-Bereich (verpixelt)', control: 'mithelfen', logs: 'Protokoll', tests: 'Prüfen' };
   function renderPerms(p) {
     if (!p) return;
     var on = Object.keys(PERM_TEXT).filter(function (k) { return p[k]; }).map(function (k) { return PERM_TEXT[k]; });
@@ -433,9 +437,27 @@
       var p = document.createElement('p');
       p.className = m.from === 'helfer' ? 'out' : 'in';
       p.textContent = String(m.text || '');
+      // #170: Bildschirmfoto vom Nutzer – einmal abholen, dann aus dem Zwischenspeicher
+      if (typeof m.snap === 'number') {
+        var img = document.createElement('img');
+        img.className = 'snap';
+        img.alt = 'Bildschirmfoto vom Nutzer';
+        img.title = 'Klick = groß anzeigen';
+        p.appendChild(document.createElement('br'));
+        p.appendChild(img);
+        loadSnap(m.snap, img);
+      }
       box.appendChild(p);
     });
     box.scrollTop = box.scrollHeight;
+  }
+  var snapCache = {};
+  function loadSnap(id, img) {
+    img.onclick = function () { img.classList.toggle('big'); }; // Klick = groß / wieder klein
+    if (snapCache[id]) { img.src = snapCache[id]; return; }
+    call('/snap', { id: id }).then(function (r) {
+      if (r && r.snap && /^data:image\/jpeg;base64,/.test(r.snap.img)) { snapCache[id] = r.snap.img; img.src = r.snap.img; }
+    });
   }
   function sendChat() {
     var t = ($('hchatin').value || '').trim();

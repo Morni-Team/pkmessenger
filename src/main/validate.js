@@ -604,7 +604,7 @@ const validators = {
   helpPerms(p) {
     const src = obj(p);
     const out = {};
-    for (const k of ['screen', 'control', 'logs', 'tests']) {
+    for (const k of ['screen', 'chats', 'control', 'logs', 'tests']) {
       if (src[k] === undefined) continue;
       if (typeof src[k] !== 'boolean') throw new ValidationError(`Ungültiges Recht "${k}".`);
       out[k] = src[k];

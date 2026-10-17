@@ -45,6 +45,7 @@ export const api = Object.fromEntries(
     'quitApp',
     'helpControl',
     'helpPerms',
+    'helpSnapshot',
     'helpDecide',
     'helpDisconnect',
     'helpSetRelay',

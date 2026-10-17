@@ -47,6 +47,46 @@ function maskBitmap(buf, width, height, rects) {
   return buf;
 }
 
+/**
+ * #170: „Er kann dem Helfer auch Chats zeigen, aber der Supporter sieht nicht die Namen und nicht den Inhalt.“
+ * Der Chat-Bereich wird darum nur in groben Blöcken (Mittelwert je Block) gezeigt: Layout und Farben erkennbar,
+ * kein Text, keine Namen, keine Bilder lesbar. Arbeitet direkt auf dem BGRA-Bitmap (rein, testbar).
+ */
+function pixelateBitmap(buf, width, height, block) {
+  for (let by = 0; by < height; by += block) {
+    for (let bx = 0; bx < width; bx += block) {
+      const y1 = Math.min(height, by + block);
+      const x1 = Math.min(width, bx + block);
+      let b = 0;
+      let g = 0;
+      let r = 0;
+      let n = 0;
+      for (let y = by; y < y1; y += 1) {
+        for (let x = bx, i = (y * width + bx) * 4; x < x1; x += 1, i += 4) {
+          b += buf[i];
+          g += buf[i + 1];
+          r += buf[i + 2];
+          n += 1;
+        }
+      }
+      b = Math.round(b / n);
+      g = Math.round(g / n);
+      r = Math.round(r / n);
+      for (let y = by; y < y1; y += 1) {
+        for (let x = bx, i = (y * width + bx) * 4; x < x1; x += 1, i += 4) {
+          buf[i] = b;
+          buf[i + 1] = g;
+          buf[i + 2] = r;
+          buf[i + 3] = 255;
+        }
+      }
+    }
+  }
+  return buf;
+}
+// Blockgröße: 1/32 der Breite, mindestens 24 px (bei 1280 px → 40 px: eine Zeile Text ist dann ein Farbfleck)
+const chatBlock = (width) => Math.max(24, Math.round(width / 32));
+
 /** Welche Stellen müssen schwarz? (erlaubter Bereich fehlt → alles) */
 function rectsToHide(v) {
   if (!v.allowed) return [{ x: 0, y: 0, w: 1, h: 1 }];
@@ -60,25 +100,32 @@ function rectsToHide(v) {
  */
 const sameRect = (a, b) => Boolean(a && b) && ['x', 'y', 'w', 'h'].every((k) => Math.abs(a[k] - b[k]) < 0.003);
 
-async function captureForHelper({ view, capture, nativeImage, freshView = null, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY }) {
+async function captureForHelper({ view, capture, nativeImage, freshView = null, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY, chats = false }) {
   // #164: Wenn möglich die AKTUELLE Ansicht direkt vor und nach der Aufnahme nehmen (nicht die bis zu 700 ms alte).
   // Passen vorher/nachher nicht zusammen (z. B. Einstellungen werden gerade geschlossen), wird das Bild verworfen.
   const before = freshView ? await freshView().catch(() => null) : view;
   if (freshView && !before) return null;
   let v = redactView(before);
-  if (v.hidden || !v.allowed) return null; // Chat-Bereich oder unbekannt: kein Bild
+  // #170: Chat-Bereich nur, wenn der Nutzer „Chat-Bereich zeigen“ erlaubt hat – und dann nur verpixelt
+  const chatView = chats === true && v.hidden && v.screen === 'workspace';
+  if (!chatView && (v.hidden || !v.allowed)) return null; // Chat-Bereich oder unbekannt: kein Bild
   const img = await capture();
   if (freshView) {
     const after = redactView(await freshView().catch(() => null));
-    if (after.hidden || after.screen !== v.screen || !sameRect(after.allowed, v.allowed)) return null;
-    // geschwärzt wird beides: private Stellen von vorher UND nachher
-    v = { ...v, masks: [...(v.masks || []), ...(after.masks || [])], fields: [...(v.fields || []), ...(after.fields || [])] };
+    if (chatView) {
+      if (!after.hidden || after.screen !== v.screen) return null; // inzwischen woanders → lieber kein Bild
+    } else {
+      if (after.hidden || after.screen !== v.screen || !sameRect(after.allowed, v.allowed)) return null;
+      // geschwärzt wird beides: private Stellen von vorher UND nachher
+      v = { ...v, masks: [...(v.masks || []), ...(after.masks || [])], fields: [...(v.fields || []), ...(after.fields || [])] };
+    }
   }
   if (!img || img.isEmpty?.()) return null;
   const { width, height } = img.getSize();
   const bmp = img.toBitmap();
   if (!width || !height || bmp.length !== width * height * 4) return null; // unerwartetes Format → lieber kein Bild
-  maskBitmap(bmp, width, height, rectsToHide(v));
+  if (chatView) pixelateBitmap(bmp, width, height, chatBlock(width));
+  else maskBitmap(bmp, width, height, rectsToHide(v));
   let out = nativeImage.createFromBitmap(bmp, { width, height });
   if (width > maxWidth) out = out.resize({ width: maxWidth, quality: 'good' });
   const jpeg = out.toJPEG(quality);
@@ -86,4 +133,4 @@ async function captureForHelper({ view, capture, nativeImage, freshView = null, 
   return { img: `data:image/jpeg;base64,${jpeg.toString('base64')}`, w: size.width, h: size.height };
 }
 
-module.exports = { captureForHelper, maskBitmap, rectsToHide, outside, toPixels, sameRect };
+module.exports = { captureForHelper, maskBitmap, pixelateBitmap, chatBlock, rectsToHide, outside, toPixels, sameRect };

@@ -4,7 +4,7 @@
 // geschwärzt, bevor das Bild den PC verlässt. Im Chat-Bereich gibt es gar kein Bild.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { captureForHelper, maskBitmap, rectsToHide, outside } = require('../src/main/help-screen');
+const { captureForHelper, maskBitmap, pixelateBitmap, chatBlock, rectsToHide, outside } = require('../src/main/help-screen');
 const { redactView, allowHelperAction } = require('../src/shared/help-redact');
 
 // Mini-„nativeImage“: Bitmap im Speicher, damit wir prüfen können, welche Pixel geschwärzt wurden
@@ -243,4 +243,38 @@ test('#164 Einstellungen werden gerade geschlossen → Bild wird verworfen (Helf
   assert.equal(await captureForHelper({ view: settings, capture: async () => fakeImage(20, 20), nativeImage: fakeNative, freshView: async () => null }), null);
   // vorher = nachher → Bild ok
   assert.ok((await run([settings, settings])).out?.img);
+});
+
+// #170: „Chats zeigen, aber der Supporter sieht nicht die Namen und nicht den Inhalt“
+test('Chat-Bereich mit Erlaubnis: ganzes Bild nur in groben Blöcken – kein Detail bleibt übrig', async () => {
+  const w = 640;
+  const h = 64;
+  const img = fakeImage(w, h, 0);
+  // „Text“: feines Muster (1-px-Streifen), wie Schrift
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) img.buf.fill(x % 2 ? 255 : 0, (y * w + x) * 4, (y * w + x) * 4 + 3);
+  const view = { screen: 'workspace' };
+  // ohne Erlaubnis weiterhin gar kein Bild
+  assert.equal(await captureForHelper({ view, capture: async () => img, nativeImage: fakeNative }), null);
+  const out = await captureForHelper({ view, chats: true, capture: async () => img, nativeImage: fakeNative });
+  assert.match(out.img, /^data:image\/jpeg;base64,/);
+  const block = chatBlock(w);
+  assert.ok(block >= 24);
+  // innerhalb eines Blocks überall dieselbe Farbe → Muster (Text) ist weg
+  for (let x = 0; x < block; x++) assert.equal(px(img.buf, w, x, 3), px(img.buf, w, 0, 0));
+  assert.ok(Math.abs(px(img.buf, w, 0, 0) - 128) <= 1);
+  // Nutzer wechselt während der Aufnahme in die Einstellungen → kein Bild
+  let n = 0;
+  const fresh = async () => (n++ ? { screen: 'settings', allowed: { x: 0, y: 0, w: 1, h: 1 } } : { screen: 'workspace' });
+  assert.equal(await captureForHelper({ view, chats: true, freshView: fresh, capture: async () => fakeImage(32, 32), nativeImage: fakeNative }), null);
+});
+
+test('pixelateBitmap: Mittelwert je Block, Ränder ohne Fehler', () => {
+  const w = 5;
+  const h = 3;
+  const buf = Buffer.alloc(w * h * 4, 0);
+  buf.fill(200, 0, 4); // ein heller Punkt oben links
+  pixelateBitmap(buf, w, h, 4);
+  assert.equal(px(buf, w, 0, 0), Math.round(200 / 12)); // Block 4×3
+  assert.equal(px(buf, w, 3, 2), Math.round(200 / 12));
+  assert.equal(px(buf, w, 4, 0), 0); // Randblock 1×3
 });

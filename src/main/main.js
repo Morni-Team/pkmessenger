@@ -228,9 +228,9 @@ const help = createHelp({
   p2p: demo || SHOTS_ARG ? null : createP2PBridge({ BrowserWindow, ipcMain, htmlPath: path.join(ROOT, 'build', 'p2p-host', 'index.html'), preloadPath: path.join(__dirname, '..', 'preload', 'p2p-preload.js'), logger }),
   p2pPage: HELP_PAGE,
   // #158: echtes Bild der App für den Helfer – Chats & Geheimnisse werden in help-screen.js geschwärzt
-  captureScreen: (view, { small = false } = {}) =>
+  captureScreen: (view, { small = false, chats = false } = {}) =>
     mainWindow && !mainWindow.isDestroyed()
-      ? captureForHelper({ view, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
+      ? captureForHelper({ view, chats, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
       : null,
   // #170: Protokoll + Einrichtungs-Prüfung für den Helfer – nur wenn der Nutzer es angekreuzt hat (help.js prüft das),
   // geschwärzt in help-redact.js

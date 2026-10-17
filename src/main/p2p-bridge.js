@@ -5,7 +5,7 @@
 // Das Fenster darf nur eines: Helfer-Anfragen (/pair, /view, /act, …) an den Hilfe-Manager weiterreichen.
 // Alles andere (Kopplung mit Code, Bestätigung am PC, Schwärzen, Prüfung jeder Aktion) bleibt unverändert in help.js.
 
-const ALLOWED_PATHS = new Set(['/pair', '/view', '/act', '/screen', '/logs', '/diag']); // #170: Protokoll + Tests (nur mit Erlaubnis)
+const ALLOWED_PATHS = new Set(['/pair', '/view', '/act', '/screen', '/logs', '/diag', '/snap']); // #170: Protokoll, Tests, Bildschirmfotos
 const MAX_BODY = 32 * 1024;
 
 /** Anfrage aus dem P2P-Fenster prüfen (IPC-Validierung). */

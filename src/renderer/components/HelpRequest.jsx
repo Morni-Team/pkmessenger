@@ -173,6 +173,7 @@ export function HelpController({ toast }) {
 // #170: Was darf der Helfer? Wird beim Zulassen angekreuzt und ist während der Hilfe jederzeit änderbar.
 const PERMS = [
   { key: 'screen', label: '👀 Bild der App sehen', hint: 'nur Einstellungen/Einrichtung – Chats, Namen und Geheimnisse sind immer schwarz' },
+  { key: 'chats', label: '💬 Chat-Bereich zeigen', hint: 'nur stark verpixelt – Namen und Nachrichten sind nicht lesbar, nur das Aussehen' },
   { key: 'control', label: '🖱 Mithelfen', hint: 'klicken, scrollen, in normale Felder tippen – nie Passwörter oder Token' },
   { key: 'logs', label: '📄 Protokoll abrufen', hint: 'technische Fehlerzeilen, gefiltert – ohne Token, Passwörter und Namen' },
   { key: 'tests', label: '🩺 Einrichtung prüfen', hint: 'Bot-Anmeldung, Erlaubnisse, Kanäle – ohne Server-Namen' },
@@ -196,7 +197,7 @@ export function PermChecks({ perms, onChange }) {
 
 // #170: „Darf dieser Helfer verbinden?“ – mit Rechten zum Ankreuzen und App-Passwort bzw. Windows Hello
 function HelpApprove({ pending }) {
-  const [perms, setPerms] = useState(() => ({ screen: true, control: true, logs: false, tests: false, ...(pending.perms || {}) }));
+  const [perms, setPerms] = useState(() => ({ screen: true, chats: false, control: true, logs: false, tests: false, ...(pending.perms || {}) }));
   const [lock, setLock] = useState(null);
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -310,6 +311,13 @@ function HelpChat() {
     setText('');
     await api.helpChat({ text: t }).catch(() => {});
   };
+  // #170: Bildschirmfoto an den Helfer (geschwärzt wie das Live-Bild, im Chat-Bereich nur verpixelt)
+  const [snapNote, setSnapNote] = useState('');
+  const snap = async () => {
+    setSnapNote('');
+    const r = await api.helpSnapshot().catch((e) => ({ ok: false, reason: e.message }));
+    if (!r?.ok) setSnapNote(r?.reason || 'Bild ging nicht.');
+  };
   if (!open)
     return (
       <button className="help-chat__bubble" onClick={() => (setOpen(true), setUnread(0))} aria-label="Chat mit dem Helfer öffnen">
@@ -335,10 +343,14 @@ function HelpChat() {
       </div>
       <div className="help-chat__row">
         <input value={text} maxLength={300} placeholder="Nachricht an den Helfer …" aria-label="Nachricht an den Helfer" onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
+        <button className="btn btn--ghost btn--small" onClick={snap} title="Bildschirmfoto an den Helfer schicken – Chats nur verpixelt, Geheimnisse schwarz" aria-label="Bildschirmfoto an den Helfer">
+          📷
+        </button>
         <button className="btn btn--primary btn--small" onClick={send}>
           Senden
         </button>
       </div>
+      {snapNote && <p className="warn small help-chat__note">{snapNote}</p>}
     </div>
   );
 }

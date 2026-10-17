@@ -119,7 +119,8 @@ function allowHelperAction(action, { view = {}, enabled = true, controlAllowed =
 }
 
 // #170: Der Nutzer kreuzt beim Zulassen an, was der Helfer darf. Ab Werk: Bild + Mitsteuern ja, Protokolle/Tests nein.
-const DEFAULT_PERMS = Object.freeze({ screen: true, control: true, logs: false, tests: false });
+// chats: Chat-Bereich zeigen – nur stark verpixelt (help-screen.js), ab Werk aus
+const DEFAULT_PERMS = Object.freeze({ screen: true, chats: false, control: true, logs: false, tests: false });
 function normPerms(p, base = DEFAULT_PERMS) {
   const src = p && typeof p === 'object' ? p : {};
   return Object.fromEntries(Object.keys(DEFAULT_PERMS).map((k) => [k, typeof src[k] === 'boolean' ? src[k] : base[k]]));

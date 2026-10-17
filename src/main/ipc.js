@@ -232,6 +232,7 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
     // #170: flag() liefert nur true/false – setControl erwartet { on } (vorher schaltete der Haken immer AUS)
     'pk:help-control': (p) => requireHelp().setControl({ on: validators.flag(p) }),
     'pk:help-perms': (p) => requireHelp().setPerms(validators.helpPerms(p)),
+    'pk:help-snapshot': () => requireHelp().snapshot(), // #170: Bildschirmfoto an den Helfer
     // #170: Zulassen nur mit App-Passwort bzw. Windows Hello, wenn eines eingerichtet ist
     'pk:help-decide': async (p) => {
       const d = validators.helpDecide(p);

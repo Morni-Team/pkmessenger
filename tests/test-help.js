@@ -159,7 +159,7 @@ test('Rechte: ohne Haken kein Protokoll, keine Prüfung, kein Bild', async () =>
   assert.equal(shots, 0);
   const v = await call('/view', {});
   assert.equal(v.screen, false);
-  assert.deepEqual(v.perms, { screen: false, control: true, logs: false, tests: false });
+  assert.deepEqual(v.perms, { screen: false, chats: false, control: true, logs: false, tests: false });
   ctx.help.stop();
 });
 
@@ -189,7 +189,7 @@ test('Rechte: mit Haken Protokoll (gefiltert, ohne Token/Namen) und Prüfung (oh
   assert.equal(ctx.help.status().perms.tests, true);
   assert.ok(ctx.help.status().activity.some((a) => /Protokoll abgerufen/.test(a.action)));
   ctx.help.stop();
-  assert.deepEqual(ctx.help.status().perms, { screen: true, control: true, logs: false, tests: false }); // nach dem Beenden wieder ab Werk
+  assert.deepEqual(ctx.help.status().perms, { screen: true, chats: false, control: true, logs: false, tests: false }); // nach dem Beenden wieder ab Werk
 });
 
 test('IPC: Zulassen braucht das App-Passwort (falls gesetzt); „Mithelfen“-Haken schaltet wirklich EIN', async () => {
@@ -214,4 +214,31 @@ test('IPC: Zulassen braucht das App-Passwort (falls gesetzt); „Mithelfen“-Ha
   await call('pk:help-control', { on: true });
   await call('pk:help-control', { on: false });
   assert.deepEqual(controls, [{ on: true }, { on: false }]);
+});
+
+test('Chat-Bereich: Bild nur mit Haken „Chat-Bereich zeigen“ (verpixelt); Bildschirmfoto vom Nutzer kommt im Chat an', async () => {
+  const calls = [];
+  const captureScreen = async (view, opts) => (calls.push(opts), { img: `data:image/jpeg;base64,${opts.small ? 'S' : 'L'}`, w: 10, h: 10 });
+  const ctx = setup({ perms: { screen: true, chats: false }, extra: { captureScreen }, view: { screen: 'workspace' } });
+  const s = await start(ctx);
+  await pairOk(ctx, s);
+  const call = (path, payload) => post(s.base, path, seal({ ...payload, t: Date.now() }, s.key)).then((r) => unseal(r, s.key));
+  assert.equal((await call('/view', {})).chats, false);
+  await call('/screen', {});
+  assert.equal(calls.at(-1).chats, false); // ohne Haken: help-screen.js liefert im Chat-Bereich kein Bild
+  ctx.help.setPerms({ chats: true });
+  assert.equal((await call('/view', {})).chats, true);
+  await call('/screen', {});
+  assert.equal(calls.at(-1).chats, true);
+  // Bildschirmfoto: nur mit verbundenem Helfer, klein, Chat-Bereich verpixelt; Helfer holt es über /snap
+  const r = await ctx.help.snapshot();
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls.at(-1), { small: true, chats: true });
+  const msg = (await call('/view', {})).chat.at(-1);
+  assert.equal(msg.from, 'nutzer');
+  assert.equal(typeof msg.snap, 'number');
+  assert.equal((await call('/snap', { id: msg.snap })).snap.img, 'data:image/jpeg;base64,S');
+  assert.equal((await call('/snap', { id: 999 })).snap, null);
+  ctx.help.stop();
+  assert.equal((await ctx.help.snapshot()).ok, false);
 });

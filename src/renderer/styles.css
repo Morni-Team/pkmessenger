@@ -5199,3 +5199,4 @@ body.help-active .help-bar {
 .help-perms__row input { margin-top: 2px; flex: none; }
 .help-approve { max-width: 520px; }
 .help-approve .settings__row input[type='password'] { flex: 1; min-width: 0; }
+.help-chat__note { margin: 0; padding: 0 10px 8px; }

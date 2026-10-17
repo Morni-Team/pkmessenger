@@ -1267,6 +1267,23 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
         await hjs(`document.getElementById('typein').value = 'Audio'; document.getElementById('typeok').click();`);
         await wait(900);
         r.eingabeBeimNutzer = await js(win, `document.querySelector('.modal.settings input')?.value || ''`);
+        // #170: Nutzer schickt ein Bildschirmfoto → kommt beim Helfer im Chat an
+        await js(win, `document.querySelector('[aria-label="Bildschirmfoto an den Helfer"]')?.click()`);
+        for (let i = 0; i < 20 && !(await hjs(`Boolean(document.querySelector('#hchatlog img.snap')?.naturalWidth)`)); i++) await wait(300);
+        r.fotoBeimHelfer = await hjs(`(() => { const i = document.querySelector('#hchatlog img.snap'); return i ? i.naturalWidth + 'x' + i.naturalHeight : null; })()`);
+        // #170: Chat-Bereich zeigen (nur verpixelt): Haken setzen, Einstellungen schließen → Helfer sieht Blöcke
+        await js(win, `window.api.helpPerms({ chats: true })`);
+        await js(win, `document.querySelector('.settings .icon-btn')?.click()`);
+        for (let i = 0; i < 25 && !(await hjs(`/verpixelt/.test(document.getElementById('shothint').textContent)`)); i++) await wait(300);
+        await wait(800);
+        r.chatVerpixelt = await hjs(`/verpixelt/.test(document.getElementById('shothint').textContent) && /Chat-Bereich/.test(document.getElementById('perms').textContent) && document.getElementById('shot').naturalWidth > 0`);
+        // genau das Bild, das beim Helfer angekommen ist (verstecktes Fenster malt nicht neu → nicht capturePage)
+        const pix = await hjs(`document.getElementById('shot').src`);
+        if (/^data:image\/jpeg;base64,/.test(pix)) fs.writeFileSync(path.join(dir, '89e-helfer-chat-verpixelt.jpg'), Buffer.from(pix.split(',')[1], 'base64'));
+        await js(win, `window.api.helpPerms({ chats: false })`);
+        await js(win, `window.dispatchEvent(new CustomEvent('pk:open-settings', { detail: {} }))`);
+        await wait(600);
+        await js(win, `document.querySelector('.settings__nav [data-nav="aussehen"]')?.click()`);
         await wait(600);
         fs.writeFileSync(path.join(dir, '89d-helfer-seite.png'), (await helper.webContents.capturePage()).toPNG());
         console.log(`[helfer-echt] ${JSON.stringify(r)}`);

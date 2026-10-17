@@ -94,8 +94,11 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
   }
   let sessionMeta = null;
   let chatLog = []; // #160: Hilfe-Chat zwischen Helfer und Nutzer (nur im Speicher, endet mit der Hilfe)
-  function addChat(from, text) {
-    const e = { from, text: String(text).trim().slice(0, 300), at: now() };
+  // #170: Bildschirmfotos, die der Nutzer selbst schickt (nur im Speicher, max. 5, enden mit der Hilfe)
+  let snapshots = [];
+  let snapSeq = 0;
+  function addChat(from, text, extra = {}) {
+    const e = { from, text: String(text).trim().slice(0, 300), at: now(), ...extra };
     chatLog.push(e);
     chatLog = chatLog.slice(-50);
     emit('help:chat', e);
@@ -215,7 +218,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     if (!session || session.expires < now()) return { code: 401, obj: { error: 'Nicht verbunden.' } };
     const data = openBody(body, session.key);
     if (!data) return { code: 400, obj: { error: 'Ungültige oder wiederholte Anfrage.' } };
-    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: perms.control, screen: Boolean(captureScreen) && perms.screen, perms: { ...perms }, chat: chatLog.slice(-30) }, session.key) };
+    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: perms.control, screen: Boolean(captureScreen) && perms.screen, chats: perms.screen && perms.chats, perms: { ...perms }, chat: chatLog.slice(-30) }, session.key) };
     // #158: echtes Bild der App (geschwärzt in help-screen.js) – höchstens alle 700 ms neu aufnehmen
     if (path === '/screen') {
       if (!captureScreen || !perms.screen) return { code: 200, obj: seal({ screen: null }, session.key) };
@@ -223,15 +226,15 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       // (der Helfer nennt die Nummer seines Bildes; gleich → nur „same“ statt ~50 KB)
       // #44: über die Vermittler (VPN, strenge Netze) ein kleines Bild, das in eine Vermittler-Nachricht passt
       const small = data.small === true;
-      if (!lastShot || lastShot.small !== small || now() - lastShot.at > 250) {
+      if (!lastShot || lastShot.small !== small || lastShot.chats !== perms.chats || now() - lastShot.at > 250) {
         let shot = null;
         try {
-          shot = await captureScreen(getView(), { small });
+          shot = await captureScreen(getView(), { small, chats: perms.chats }); // #170: Chat-Bereich nur verpixelt
         } catch (err) {
           logger?.warn?.('help', `Bild: ${err?.message || err}`);
         }
         const same = shot && lastShot?.shot && shot.img === lastShot.shot.img;
-        lastShot = { at: now(), shot, small, id: same ? lastShot.id : (lastShot?.id || 0) + 1 };
+        lastShot = { at: now(), shot, small, chats: perms.chats, id: same ? lastShot.id : (lastShot?.id || 0) + 1 };
       }
       if (lastShot.shot && data.have === lastShot.id) return { code: 200, obj: seal({ screen: { same: true, id: lastShot.id } }, session.key) };
       return { code: 200, obj: seal({ screen: lastShot.shot ? { ...lastShot.shot, id: lastShot.id } : null }, session.key) };
@@ -246,6 +249,11 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       else applyAction(data.action.type === 'cursor' ? { ...data.action, name: session.name } : data.action);
       if (data.action?.type !== 'cursor') log('Helfer-Aktion', { kind: data.action?.type }); // Mausbewegungen nicht protokollieren
       return { code: 200, obj: seal({ ok: true }, session.key) };
+    }
+    // #170: vom Nutzer geschicktes Bildschirmfoto abholen (er hat es selbst geschickt → kein Haken nötig)
+    if (path === '/snap') {
+      const snap = snapshots.find((x) => x.id === data.id);
+      return { code: 200, obj: seal({ snap: snap ? { id: snap.id, img: snap.img, w: snap.w, h: snap.h } : null }, session.key) };
     }
     // #170: Protokoll (nur wenn der Nutzer es erlaubt hat) – gefiltert und ohne Geheimnisse/Namen
     if (path === '/logs') {
@@ -473,12 +481,32 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     return { ok: true, chat: chatLog.slice(-30) };
   }
 
+  /**
+   * #170: Der Nutzer schickt dem Helfer ein Bildschirmfoto (klein, wie über die Vermittler). Geschwärzt wie das
+   * Live-Bild; im Chat-Bereich immer nur verpixelt. Landet als Nachricht im Hilfe-Chat.
+   */
+  async function snapshot() {
+    if (!session || !captureScreen) return { ok: false, reason: 'Gerade ist kein Helfer verbunden.' };
+    let shot = null;
+    try {
+      shot = await captureScreen(getView(), { small: true, chats: true });
+    } catch (err) {
+      logger?.warn?.('help', `Bildschirmfoto: ${err?.message || err}`);
+    }
+    if (!shot?.img) return { ok: false, reason: 'Gerade kein Bild möglich – kurz warten und nochmal versuchen.' };
+    snapSeq += 1;
+    snapshots = [...snapshots, { id: snapSeq, img: shot.img, w: shot.w, h: shot.h }].slice(-5);
+    addChat('nutzer', '📷 Bildschirmfoto', { snap: snapSeq });
+    log('Bildschirmfoto an den Helfer geschickt');
+    return { ok: true, chat: chatLog.slice(-30) };
+  }
+
   /** Mitsteuern erlauben/sperren (nur Zusehen). */
   function setControl({ on }) {
     return setPerms({ control: Boolean(on) });
   }
 
-  const PERM_TEXT = { screen: 'Bild', control: 'Mitsteuern', logs: 'Protokoll', tests: 'Tests' };
+  const PERM_TEXT = { screen: 'Bild', chats: 'Chat-Bereich verpixelt', control: 'Mitsteuern', logs: 'Protokoll', tests: 'Tests' };
   const permText = () => Object.keys(PERM_TEXT).filter((k) => perms[k]).map((k) => PERM_TEXT[k]).join(', ') || 'nur Chat';
   /** #170: Rechte des Helfers ändern (jederzeit, auch während er verbunden ist). */
   function setPerms(p) {
@@ -514,6 +542,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     pairing = null;
     session = null;
     chatLog = [];
+    snapshots = [];
     perms = { ...DEFAULT_PERMS };
     stopRelay();
     stopP2P();
@@ -529,7 +558,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     return status();
   }
 
-  return { status, request, decide, setControl, setPerms, disconnect, stop, chat, chatLog: () => chatLog.slice(-30), _test: { seal, unseal, handleAddress: () => server?.address() } };
+  return { status, request, decide, setControl, setPerms, snapshot, disconnect, stop, chat, chatLog: () => chatLog.slice(-30), _test: { seal, unseal, handleAddress: () => server?.address() } };
 }
 
 module.exports = { createHelp, isPrivateIp, DEFAULT_PORT };
