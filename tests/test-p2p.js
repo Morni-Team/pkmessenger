@@ -5,9 +5,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const nacl = require('tweetnacl');
-const { schnorr } = require('@noble/curves/secp256k1');
-const { sha256 } = require('@noble/hashes/sha256');
-const { bytesToHex } = require('@noble/hashes/utils');
+const { schnorr } = require('@noble/curves/secp256k1.js');
+const { sha256 } = require('@noble/hashes/sha2.js');
+const { bytesToHex, hexToBytes } = require('@noble/hashes/utils.js');
 const { createP2PHost, connectP2P, createSignal, topicOf, makeEvent, KIND } = require('../src/shared/p2p');
 
 // ---- nachgebauter Nostr-Relay ----
@@ -33,7 +33,7 @@ function fakeNostr({ dead = [] } = {}) {
         const e = m[1];
         // echter Relay: ID und Signatur prüfen
         const id = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([0, e.pubkey, e.created_at, e.kind, e.tags, e.content]))));
-        if (id !== e.id || !schnorr.verify(e.sig, e.id, e.pubkey)) throw new Error('ungültiges Ereignis');
+        if (id !== e.id || !schnorr.verify(hexToBytes(e.sig), hexToBytes(e.id), hexToBytes(e.pubkey))) throw new Error('ungültiges Ereignis');
         published.push({ url: this.url, e });
         for (const s of sockets) {
           if (s.url !== this.url || s.readyState !== 1) continue;
@@ -147,7 +147,7 @@ test('Falscher Schlüssel: anderes Thema, und gefälschte Nachrichten werden ign
   const got = [];
   const listener = createSignal({ key, role: 'guest', relays: RELAYS, WebSocketImpl: FakeWS, onSignal: (m) => got.push(m) });
   await new Promise((r) => setTimeout(r, 10));
-  const sk = schnorr.utils.randomPrivateKey();
+  const sk = schnorr.utils.randomSecretKey();
   const ws = new FakeWS(RELAYS[1]);
   await new Promise((r) => setTimeout(r, 5));
   ws.send(JSON.stringify(['EVENT', makeEvent(sk, 'AAAA.BBBB', topicOf(key), Date.now())]));
