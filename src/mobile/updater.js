@@ -57,9 +57,10 @@ export function createMobileUpdater({ repo, currentVersion, emit = () => {}, fet
   }
 
   async function changes() {
-    const list = await gh(`https://api.github.com/repos/${repo}/releases?per_page=8`);
+    const list = await gh(`https://api.github.com/repos/${repo}/releases?per_page=20`);
     const releases = (Array.isArray(list) ? list : [])
       .filter((r) => r && !r.draft && /^v\d+\.\d+\.\d+$/.test(String(r.tag_name)))
+      .slice(0, 8) // #167: eigene android-v…-Releases fallen oben raus, angezeigt werden weiter 8
       .map((r) => ({ tag: r.tag_name, name: String(r.name || r.tag_name).slice(0, 100), date: Date.parse(r.published_at) || null, notes: releaseNotes(r.body), url: String(r.html_url || '').startsWith('https://github.com/') ? r.html_url : null, setupUrl: null }));
     const latest = releases[0]?.tag.slice(1) || null;
     let commits = [];

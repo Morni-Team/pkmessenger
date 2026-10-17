@@ -384,3 +384,27 @@ jobs:
             echo
             echo "PKMessenger-android.apk hängt am Release. Installierte Apps finden das Update selbst (alle 6 Stunden)."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # #167: zusätzlich ein EIGENES Android-Release (Tag android-vX.Y.Z) – dort liegt nur die APK, leicht zu finden.
+      # Nie „latest“: die Update-Prüfung von PC und Handy liest /releases/latest und nur Tags der Form vX.Y.Z.
+      - name: Eigenes Android-Release (android-vX.Y.Z)
+        if: steps.key.outputs.ok == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ATAG="android-$TAG"
+          {
+            echo "📱 **PKMessenger für Android $TAG** – nur die APK."
+            echo
+            echo "1. **PKMessenger-android.apk** unten unter „Assets“ herunterladen (am Handy direkt öffnen)."
+            echo "2. Installation aus „unbekannten Quellen“ für den Browser bzw. Dateimanager erlauben, wenn Android fragt."
+            echo "3. Updates findet die App danach selbst."
+            echo
+            echo "Was neu ist: siehe das Haupt-Release [$TAG](https://github.com/$REPO/releases/tag/$TAG)."
+          } > android-notes.md
+          if gh release view "$ATAG" -R "$REPO" >/dev/null 2>&1; then
+            gh release upload "$ATAG" PKMessenger-android.apk --clobber -R "$REPO"
+          else
+            gh release create "$ATAG" PKMessenger-android.apk -R "$REPO" --target "$(git rev-parse HEAD)" --title "📱 PKMessenger Android $TAG" --notes-file android-notes.md --latest=false
+          fi
+          echo "Eigenes Android-Release: https://github.com/$REPO/releases/tag/$ATAG" >> "$GITHUB_STEP_SUMMARY"

@@ -123,6 +123,8 @@ PKMessenger sieht aus wie ein moderner Messenger: links deine Chats mit Vorschau
 
 > Windows SmartScreen meldet sich eventuell mit „Unbekannter Herausgeber“, weil die App (noch) nicht kostenpflichtig signiert ist. Klicke dann auf **„Weitere Informationen“ → „Trotzdem ausführen“**.
 
+📱 **Android:** Die APK gibt es als eigenes Release – in der [Release-Liste](https://github.com/Morni-Team/pkmessenger/releases) das neueste **„📱 PKMessenger Android …“** (Tag `android-v…`) öffnen und `PKMessenger-android.apk` laden. Sie hängt außerdem am normalen Release.
+
 **Updates kommen automatisch.** Die App prüft beim Start und alle 6 Stunden, ob es eine neue Version gibt, lädt sie im Hintergrund und fragt dann: *„Update bereit – Jetzt neu starten?“*
 
 ---
