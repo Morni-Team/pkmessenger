@@ -17,7 +17,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const nacl = require('tweetnacl');
 const { isLocalAddress } = require('../shared/ai-limits');
-const { redactView, allowHelperAction } = require('../shared/help-redact');
+const { redactView, allowHelperAction, redactLogLines, redactCheck, normPerms, DEFAULT_PERMS } = require('../shared/help-redact');
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const SESSION_TTL_MS = 60 * 60 * 1000;
@@ -65,14 +65,15 @@ const isPrivateIp = (ip) => ip === '::1' || isLocalAddress(`http://${ip.includes
  * @param {() => string[]} o.lanAddresses
  * @param {string|null} o.hostName  mDNS-Name (kein IP im Link)
  */
-function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null, p2p = null, p2pPage = null, captureScreen = null }) {
+function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () => {}, now = () => Date.now(), lanAddresses = () => [], bindHost = '0.0.0.0', hostName = null, logger = null, port = DEFAULT_PORT, webDir = null, naclPath = null, getRelay = () => null, WebSocketImpl = null, p2p = null, p2pPage = null, captureScreen = null, getLogs = null, runCheck = null }) {
   let server = null;
   let pairing = null; // { code, key, expires } – ein offener Einmal-Code
   let session = null; // { key, expires, approved, control } – der eine verbundene Helfer
   let pendingApproval = null; // { resolve }
   const seenNonces = new Map();
   const rate = new Map();
-  let controlAllowed = true; // „nur Zusehen“ schaltet das aus
+  // #170: was der Helfer darf (vom Nutzer beim Zulassen angekreuzt, jederzeit änderbar). control=false → nur Zusehen
+  let perms = { ...DEFAULT_PERMS };
   const activity = [];
   let lastShot = null; // #158: zuletzt aufgenommenes Bild (kurz zwischengespeichert)
   // #160: Was hat der Helfer in dieser Sitzung gemacht? (für die Zusammenfassung beim Beenden; ohne eingegebene Texte)
@@ -115,7 +116,8 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       running: Boolean(server?.listening),
       waitingForHelper: Boolean(pairing && !session),
       connected: Boolean(session?.approved),
-      controlAllowed,
+      controlAllowed: perms.control,
+      perms: { ...perms },
       host: hostName || null,
       addresses: lanAddresses(),
       port: server?.address()?.port || DEFAULT_PORT,
@@ -158,7 +160,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     return new Promise((resolve) => {
       const id = rid(8);
       pendingApproval = { id, resolve };
-      emit('help:pending', { id, ...info });
+      emit('help:pending', { id, ...info, perms: { ...perms } });
       setTimeout(() => {
         if (pendingApproval?.id === id) {
           pendingApproval = null;
@@ -168,10 +170,11 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       }, APPROVAL_TIMEOUT_MS).unref?.();
     });
   }
-  function decide({ id, allow }) {
+  function decide({ id, allow, perms: chosen = null }) {
     if (!pendingApproval || pendingApproval.id !== id) return false;
     const { resolve } = pendingApproval;
     pendingApproval = null;
+    if (allow && chosen) perms = normPerms(chosen);
     emit('help:pending', { id, done: true });
     resolve(Boolean(allow));
     return true;
@@ -201,21 +204,21 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       const helperName = String(payload?.name || 'Helfer').slice(0, 40);
       const ok = await askUser({ helper: helperName, ip });
       if (!ok) return { code: 200, obj: seal({ error: 'Am PC abgelehnt oder keine Antwort.' }, pairing.key) };
-      session = { key: pairing.key, expires: now() + SESSION_TTL_MS, approved: true, control: controlAllowed, name: helperName };
+      session = { key: pairing.key, expires: now() + SESSION_TTL_MS, approved: true, control: perms.control, name: helperName };
       sessionMeta = { name: helperName, started: now() };
       sessionLog = [];
       pairing = null;
-      log('Helfer verbunden', { helper: helperName });
+      log('Helfer verbunden', { helper: helperName, perms: permText() });
       emitStatus();
       return { code: 200, obj: seal({ ok: true, ttl: SESSION_TTL_MS }, session.key) };
     }
     if (!session || session.expires < now()) return { code: 401, obj: { error: 'Nicht verbunden.' } };
     const data = openBody(body, session.key);
     if (!data) return { code: 400, obj: { error: 'Ungültige oder wiederholte Anfrage.' } };
-    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: controlAllowed, screen: Boolean(captureScreen), chat: chatLog.slice(-30) }, session.key) };
+    if (path === '/view') return { code: 200, obj: seal({ view: redactView(getView()), control: perms.control, screen: Boolean(captureScreen) && perms.screen, perms: { ...perms }, chat: chatLog.slice(-30) }, session.key) };
     // #158: echtes Bild der App (geschwärzt in help-screen.js) – höchstens alle 700 ms neu aufnehmen
     if (path === '/screen') {
-      if (!captureScreen) return { code: 200, obj: seal({ screen: null }, session.key) };
+      if (!captureScreen || !perms.screen) return { code: 200, obj: seal({ screen: null }, session.key) };
       // #161: schneller – höchstens alle 250 ms neu aufnehmen, und unverändertes Bild NICHT erneut schicken
       // (der Helfer nennt die Nummer seines Bildes; gleich → nur „same“ statt ~50 KB)
       // #44: über die Vermittler (VPN, strenge Netze) ein kleines Bild, das in eine Vermittler-Nachricht passt
@@ -234,7 +237,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       return { code: 200, obj: seal({ screen: lastShot.shot ? { ...lastShot.shot, id: lastShot.id } : null }, session.key) };
     }
     if (path === '/act') {
-      const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed });
+      const verdict = allowHelperAction(data.action, { view: getView(), enabled: true, controlAllowed: perms.control });
       if (!verdict.ok) return { code: 200, obj: seal({ rejected: verdict.reason }, session.key) };
       // #160: Chat-Nachrichten landen im Hilfe-Chat, nicht als Aktion in der Oberfläche
       recordAction(data.action);
@@ -243,6 +246,35 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
       else applyAction(data.action.type === 'cursor' ? { ...data.action, name: session.name } : data.action);
       if (data.action?.type !== 'cursor') log('Helfer-Aktion', { kind: data.action?.type }); // Mausbewegungen nicht protokollieren
       return { code: 200, obj: seal({ ok: true }, session.key) };
+    }
+    // #170: Protokoll (nur wenn der Nutzer es erlaubt hat) – gefiltert und ohne Geheimnisse/Namen
+    if (path === '/logs') {
+      if (!perms.logs || !getLogs) return { code: 200, obj: seal({ rejected: 'Der Nutzer hat das Protokoll nicht freigegeben.' }, session.key) };
+      const f = data.filter && typeof data.filter === 'object' ? data.filter : {};
+      let lines = [];
+      try {
+        lines = await getLogs();
+      } catch (err) {
+        logger?.warn?.('help', `Protokoll: ${err?.message || err}`);
+      }
+      const out = redactLogLines(lines, { level: ['info', 'warn', 'error'].includes(f.level) ? f.level : 'info', area: typeof f.area === 'string' ? f.area : '', text: typeof f.text === 'string' ? f.text : '', minutes: Number.isInteger(f.minutes) && f.minutes >= 0 && f.minutes <= 10080 ? f.minutes : 0, now: now() });
+      sessionLog.push({ at: now(), type: 'logs', text: 'Protokoll abgerufen', label: `${out.length} Zeilen`, screen: '' });
+      log('Helfer hat das Protokoll abgerufen', { lines: out.length });
+      return { code: 200, obj: seal({ logs: out }, session.key) };
+    }
+    // #170: Einrichtungs-Prüfung starten (nur wenn erlaubt) – ohne Server-/Bot-Namen
+    if (path === '/diag') {
+      if (!perms.tests || !runCheck) return { code: 200, obj: seal({ rejected: 'Der Nutzer hat Tests nicht freigegeben.' }, session.key) };
+      let result = null;
+      try {
+        result = redactCheck(await runCheck());
+      } catch (err) {
+        result = { ready: false, items: [{ ok: false, text: 'Prüfung fehlgeschlagen', fix: null }] };
+        logger?.warn?.('help', `Prüfung: ${err?.message || err}`);
+      }
+      sessionLog.push({ at: now(), type: 'diag', text: 'Einrichtung geprüft', label: '', screen: '' });
+      log('Helfer hat die Einrichtung geprüft');
+      return { code: 200, obj: seal({ diag: result }, session.key) };
     }
     return { code: 404, obj: { error: 'Unbekannt.' } };
   }
@@ -443,8 +475,17 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
 
   /** Mitsteuern erlauben/sperren (nur Zusehen). */
   function setControl({ on }) {
-    controlAllowed = Boolean(on);
-    if (session) session.control = controlAllowed;
+    return setPerms({ control: Boolean(on) });
+  }
+
+  const PERM_TEXT = { screen: 'Bild', control: 'Mitsteuern', logs: 'Protokoll', tests: 'Tests' };
+  const permText = () => Object.keys(PERM_TEXT).filter((k) => perms[k]).map((k) => PERM_TEXT[k]).join(', ') || 'nur Chat';
+  /** #170: Rechte des Helfers ändern (jederzeit, auch während er verbunden ist). */
+  function setPerms(p) {
+    const before = permText();
+    perms = normPerms(p, perms);
+    if (session) session.control = perms.control;
+    if (permText() !== before) log('Rechte des Helfers geändert', { perms: permText() });
     emitStatus();
     return status();
   }
@@ -473,6 +514,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     pairing = null;
     session = null;
     chatLog = [];
+    perms = { ...DEFAULT_PERMS };
     stopRelay();
     stopP2P();
     if (pendingApproval) {
@@ -487,7 +529,7 @@ function createHelp({ emit = () => {}, getView = () => ({}), applyAction = () =>
     return status();
   }
 
-  return { status, request, decide, setControl, disconnect, stop, chat, chatLog: () => chatLog.slice(-30), _test: { seal, unseal, handleAddress: () => server?.address() } };
+  return { status, request, decide, setControl, setPerms, disconnect, stop, chat, chatLog: () => chatLog.slice(-30), _test: { seal, unseal, handleAddress: () => server?.address() } };
 }
 
 module.exports = { createHelp, isPrivateIp, DEFAULT_PORT };

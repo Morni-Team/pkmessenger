@@ -232,6 +232,16 @@ const help = createHelp({
     mainWindow && !mainWindow.isDestroyed()
       ? captureForHelper({ view, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
       : null,
+  // #170: Protokoll + Einrichtungs-Prüfung für den Helfer – nur wenn der Nutzer es angekreuzt hat (help.js prüft das),
+  // geschwärzt in help-redact.js
+  getLogs: async () => {
+    try {
+      return (await fs.promises.readFile(logger.file, 'utf8')).split('\n').slice(-3000);
+    } catch {
+      return logger.tail(200);
+    }
+  },
+  runCheck: () => service.setupCheck(),
 });
 /** „Hilfe anfordern“: Einmal-Code + QR-Code (als Bild) für die Oberfläche */
 help.requestWithQr = async () => {

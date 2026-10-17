@@ -2,10 +2,10 @@
 
 // Direktverbindung am PC (vibeworks #219): WebRTC gibt es nur in Chromium, nicht in Node. Deshalb läuft die PC-Seite in einem
 // VERSTECKTEN, abgeschotteten Fenster (Sandbox, eigene Sitzung im Speicher, keine Node-APIs, strenge CSP).
-// Das Fenster darf nur eines: Helfer-Anfragen (/pair, /view, /act) an den Hilfe-Manager weiterreichen.
+// Das Fenster darf nur eines: Helfer-Anfragen (/pair, /view, /act, …) an den Hilfe-Manager weiterreichen.
 // Alles andere (Kopplung mit Code, Bestätigung am PC, Schwärzen, Prüfung jeder Aktion) bleibt unverändert in help.js.
 
-const ALLOWED_PATHS = new Set(['/pair', '/view', '/act', '/screen']);
+const ALLOWED_PATHS = new Set(['/pair', '/view', '/act', '/screen', '/logs', '/diag']); // #170: Protokoll + Tests (nur mit Erlaubnis)
 const MAX_BODY = 32 * 1024;
 
 /** Anfrage aus dem P2P-Fenster prüfen (IPC-Validierung). */

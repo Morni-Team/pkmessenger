@@ -229,8 +229,18 @@ function buildHandlers({ service, store, openEnvFile, openExternal, updater, app
       return true;
     },
     'pk:help-chat': (p) => requireHelp().chat(validators.helpChat(p)),
-    'pk:help-control': (p) => requireHelp().setControl(validators.flag(p)),
-    'pk:help-decide': (p) => requireHelp().decide(validators.remoteDecide(p)),
+    // #170: flag() liefert nur true/false – setControl erwartet { on } (vorher schaltete der Haken immer AUS)
+    'pk:help-control': (p) => requireHelp().setControl({ on: validators.flag(p) }),
+    'pk:help-perms': (p) => requireHelp().setPerms(validators.helpPerms(p)),
+    // #170: Zulassen nur mit App-Passwort bzw. Windows Hello, wenn eines eingerichtet ist
+    'pk:help-decide': async (p) => {
+      const d = validators.helpDecide(p);
+      if (d.allow && appLock?.status?.().enabled) {
+        if (d.hello) await appLock.verifyHello(hello);
+        else appLock.verify(d.password ?? '');
+      }
+      return requireHelp().decide({ id: d.id, allow: d.allow, perms: d.perms });
+    },
     'pk:help-disconnect': () => requireHelp().disconnect(),
     // #120: eingetragenen (oder angegebenen) Relay-Server prüfen – nur Gesundheitscheck + Test-Raum, keine Daten
     'pk:help-test-relay': (p) => {

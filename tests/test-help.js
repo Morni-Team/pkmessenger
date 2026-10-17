@@ -21,20 +21,21 @@ const post = async (base, path, body) => (await fetch(`${base}${path}`, { method
 // Schlüssel steckt im Link hinter „#c=“ (wie im echten Fluss der Helfer ihn aus dem QR bekommt)
 const keyFromUrl = (url) => new Uint8Array(Buffer.from(new URL(url).hash.replace('#c=', ''), 'base64'));
 
-function setup({ approve = true, view = { screen: 'setup', fields: [{ id: 'wizard-next', label: 'Weiter' }, { id: 'token-input', label: 'Bot-Token', secret: true }] } } = {}) {
+function setup({ approve = true, perms = undefined, extra = {}, view = { screen: 'setup', fields: [{ id: 'wizard-next', label: 'Weiter' }, { id: 'token-input', label: 'Bot-Token', secret: true }] } } = {}) {
   const events = [];
   const applied = [];
   let current = view;
   const help = createHelp({
     emit: (t, p) => {
       events.push({ t, p });
-      if (t === 'help:pending' && !p.done) setImmediate(() => help.decide({ id: p.id, allow: approve }));
+      if (t === 'help:pending' && !p.done) setImmediate(() => help.decide({ id: p.id, allow: approve, perms }));
     },
     getView: () => current,
     applyAction: (a) => applied.push(a),
     lanAddresses: () => ['127.0.0.1'],
     hostName: 'test.local',
     port: 0,
+    ...extra,
   });
   return { help, events, applied, setView: (v) => (current = v) };
 }
@@ -135,4 +136,82 @@ test('Beenden schließt den Server sofort', async () => {
   ctx.help.stop();
   assert.equal(ctx.help.status().running, false);
   await assert.rejects(fetch(`${s.base}/view`, { method: 'POST', body: '{}' }));
+});
+
+// #170: Der Nutzer kreuzt an, was der Helfer darf
+const TOKEN = 'MTAwMDAwMDAwMDAwMDAwMDAx.GxYzAB.abcdefghijklmnopqrstuvwxyz0123456789AB';
+const LOGS = [
+  `${new Date().toISOString()} INFO [help] Hilfe angefordert`,
+  `${new Date().toISOString()} ERROR [discord] login failed token=${TOKEN}`,
+  `${new Date().toISOString()} WARN [discord] Kanal „geheim-chat“ nicht sichtbar`,
+];
+const CHECK = { ready: true, items: [{ id: 'token', ok: true, text: 'Bot-Token gültig, angemeldet als SuperBot' }, { id: 'content', ok: true, text: 'Erlaubnis „Message Content Intent“ (Nachrichten lesen)' }, { id: 'guild:1', ok: false, text: '„Annas Server“: 1 von 3 Kanälen sichtbar', fix: 'Rolle geben' }] };
+
+test('Rechte: ohne Haken kein Protokoll, keine Prüfung, kein Bild', async () => {
+  let shots = 0;
+  const ctx = setup({ perms: { screen: false, control: true, logs: false, tests: false }, extra: { getLogs: () => LOGS, runCheck: async () => CHECK, captureScreen: async () => (shots++, { img: 'data:x', w: 1, h: 1 }) } });
+  const s = await start(ctx);
+  await pairOk(ctx, s);
+  const call = (path, payload) => post(s.base, path, seal({ ...payload, t: Date.now() }, s.key)).then((r) => unseal(r, s.key));
+  assert.match((await call('/logs', {})).rejected, /nicht freigegeben/);
+  assert.match((await call('/diag', {})).rejected, /nicht freigegeben/);
+  assert.equal((await call('/screen', {})).screen, null);
+  assert.equal(shots, 0);
+  const v = await call('/view', {});
+  assert.equal(v.screen, false);
+  assert.deepEqual(v.perms, { screen: false, control: true, logs: false, tests: false });
+  ctx.help.stop();
+});
+
+test('Rechte: mit Haken Protokoll (gefiltert, ohne Token/Namen) und Prüfung (ohne Namen); jederzeit wieder entziehbar', async () => {
+  const ctx = setup({ perms: { screen: true, control: false, logs: true, tests: true }, extra: { getLogs: () => LOGS, runCheck: async () => CHECK } });
+  const s = await start(ctx);
+  await pairOk(ctx, s);
+  const call = (path, payload) => post(s.base, path, seal({ ...payload, t: Date.now() }, s.key)).then((r) => unseal(r, s.key));
+  const all = (await call('/logs', { filter: { level: 'info' } })).logs;
+  assert.equal(all.length, 3);
+  assert.ok(!JSON.stringify(all).includes(TOKEN.split('.')[0]));
+  assert.ok(!JSON.stringify(all).includes('geheim-chat'));
+  const errs = (await call('/logs', { filter: { level: 'error' } })).logs;
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /ERROR \[discord\]/);
+  assert.equal((await call('/logs', { filter: { area: 'help' } })).logs.length, 1);
+  const diag = (await call('/diag', {})).diag;
+  assert.equal(diag.items.length, 3);
+  assert.ok(!JSON.stringify(diag).includes('SuperBot'));
+  assert.ok(!JSON.stringify(diag).includes('Annas Server'));
+  assert.match(diag.items[1].text, /Message Content Intent/); // feste Begriffe bleiben lesbar
+  // Mitsteuern war nicht angekreuzt
+  assert.match((await call('/act', { action: { type: 'click', target: 'wizard-next' } })).rejected, /Zusehen/);
+  // Nutzer entzieht das Protokoll während der Hilfe
+  ctx.help.setPerms({ logs: false });
+  assert.match((await call('/logs', {})).rejected, /nicht freigegeben/);
+  assert.equal(ctx.help.status().perms.tests, true);
+  assert.ok(ctx.help.status().activity.some((a) => /Protokoll abgerufen/.test(a.action)));
+  ctx.help.stop();
+  assert.deepEqual(ctx.help.status().perms, { screen: true, control: true, logs: false, tests: false }); // nach dem Beenden wieder ab Werk
+});
+
+test('IPC: Zulassen braucht das App-Passwort (falls gesetzt); „Mithelfen“-Haken schaltet wirklich EIN', async () => {
+  const { buildHandlers, wrap } = require('../src/main/ipc');
+  const decided = [];
+  const controls = [];
+  const help = { decide: (d) => (decided.push(d), true), setControl: (c) => (controls.push(c), {}), setPerms: (p) => p, status: () => ({}) };
+  let lockOn = true;
+  const appLock = { status: () => ({ enabled: lockOn }), verify: (pw) => { if (pw !== 'richtig') throw Object.assign(new Error('Falsches Passwort.'), { code: 'LOCK' }); }, verifyHello: async () => ({}) };
+  const h = buildHandlers({ service: {}, store: { get: () => ({}) }, help, appLock, hello: { verify: async () => true } });
+  const call = (ch, p) => wrap(h[ch], () => true, ch)({}, p);
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true, perms: { logs: true } })).ok, false);
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true, password: 'falsch' })).ok, false);
+  assert.equal(decided.length, 0);
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true, password: 'richtig', perms: { logs: true } })).ok, true);
+  assert.deepEqual(decided[0], { id: 'abcd1234', allow: true, perms: { logs: true } });
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true, hello: true })).ok, true);
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: false })).ok, true); // Ablehnen geht immer
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true, perms: { evil: 1, logs: 'ja' } })).ok, false);
+  lockOn = false;
+  assert.equal((await call('pk:help-decide', { id: 'abcd1234', allow: true })).ok, true);
+  await call('pk:help-control', { on: true });
+  await call('pk:help-control', { on: false });
+  assert.deepEqual(controls, [{ on: true }, { on: false }]);
 });

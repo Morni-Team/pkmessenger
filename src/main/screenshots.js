@@ -1224,6 +1224,10 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
         await wait(800);
         await hjs(`document.getElementById('name').value='Alex'; document.getElementById('code').value=${JSON.stringify(code)}; document.getElementById('go').click();`);
         for (let i = 0; i < 20 && !(await js(win, `Boolean([...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen'))`)); i++) await wait(250);
+        // #170: Rechte ankreuzen (Protokoll + Prüfen) – so sieht das Zulassen-Fenster aus
+        await js(win, `[...document.querySelectorAll('.help-approve .help-perms__row')].filter((l) => /Protokoll|Einrichtung prüfen/.test(l.textContent)).forEach((l) => { const i = l.querySelector('input'); if (!i.checked) i.click(); })`);
+        await wait(300);
+        await shoot(win, dir, '89a-hilfe-zulassen');
         await js(win, `[...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen')?.click()`);
         for (let i = 0; i < 30 && !(await hjs(`!document.getElementById('shotwrap').classList.contains('hidden') && document.getElementById('shot').naturalWidth > 0`)); i++) await wait(300);
         const r = {};
@@ -1243,6 +1247,18 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
         await hjs(`document.getElementById('drawmode').click(); (() => { const img = document.getElementById('shot'); const b = img.getBoundingClientRect(); const ev = (t, fx, fy, tgt) => (tgt || img).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: b.left + b.width * fx, clientY: b.top + b.height * fy })); ev('mousedown', 0.3, 0.3); ev('mousemove', 0.4, 0.35); ev('mousemove', 0.5, 0.4); ev('mouseup', 0.5, 0.4, window); })(); document.getElementById('drawmode').click();`);
         await wait(900);
         r.zeichnungBeimNutzer = await js(win, `document.querySelectorAll('.help-draw polyline').length`);
+        // #170: Rechte, Prüfung, Protokoll und die Eingabe-Box („Übernehmen“) beim Helfer
+        r.rechte = await hjs(`document.getElementById('perms').textContent`);
+        await hjs(`document.getElementById('diagbtn').click()`);
+        await wait(900);
+        r.pruefung = await hjs(`[...document.querySelectorAll('#diagout li')].map((l) => l.className).join(',')`);
+        await hjs(`document.getElementById('logsbtn').click(); document.getElementById('logminutes').value = '0'; document.getElementById('logfetch').click();`);
+        await wait(900);
+        r.protokoll = await hjs(`document.getElementById('logout').textContent.split('\\n').length`);
+        r.eingabeBox = await hjs(`(() => { const b = [...document.querySelectorAll('#fields .field')].find((x) => /suchen/i.test(x.textContent)); if (!b) return 'kein Feld'; b.click(); return !document.getElementById('typebox').classList.contains('hidden'); })()`);
+        await hjs(`document.getElementById('typein').value = 'Audio'; document.getElementById('typeok').click();`);
+        await wait(900);
+        r.eingabeBeimNutzer = await js(win, `document.querySelector('.modal.settings input')?.value || ''`);
         await wait(600);
         fs.writeFileSync(path.join(dir, '89d-helfer-seite.png'), (await helper.webContents.capturePage()).toPNG());
         console.log(`[helfer-echt] ${JSON.stringify(r)}`);

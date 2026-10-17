@@ -165,8 +165,7 @@
       if (f.secret) { b.disabled = true; b.title = 'Sicherheits-Feld – bedient nur der Nutzer'; }
       else b.onclick = function () {
         if (f.isText) {
-          var txt = prompt('Eingabe für ' + (f.label || 'Feld') + ':', '');
-          if (txt !== null) call('/act', { action: { type: 'type', target: f.id, text: txt } });
+          askText(f);
         } else {
           call('/act', { action: { type: 'click', target: f.id } });
         }
@@ -181,7 +180,8 @@
       var v = out.view || {};
       $('screen').textContent = 'Bildschirm: ' + (v.screen || '?');
       $('note').textContent = v.note || '';
-      $('control').textContent = out.control ? 'Du kannst mithelfen (Knöpfe klicken).' : 'Nur Zusehen – der Nutzer hat das Mitsteuern aus.';
+      $('control').textContent = out.control ? 'Du kannst mithelfen (Knöpfe klicken, ins Bild klicken, Felder ausfüllen).' : 'Nur Zusehen – der Nutzer hat das Mitsteuern aus.';
+      renderPerms(out.perms);
       if (v.hidden) $('fields').textContent = '';
       else renderFields(v);
       lastView = v;
@@ -257,8 +257,7 @@
     if (!hit) { $('shothint').textContent = 'Dort ist kein Knopf, den du drücken darfst.'; return; }
     if (hit.isText) {
       $('shothint').textContent = 'Eingabe für: ' + (hit.label || '(Feld)');
-      var txt = prompt('Eingabe für ' + (hit.label || 'Feld') + ':', '');
-      if (txt !== null) call('/act', { action: { type: 'type', target: hit.id, text: txt } });
+      askText(hit);
     } else {
       $('shothint').textContent = 'Klick auf: ' + (hit.label || '(Knopf)');
       call('/act', { action: { type: 'click', target: hit.id } });
@@ -279,6 +278,95 @@
     var p = pointOf(e);
     call('/act', { action: { type: 'cursor', x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) } });
   });
+
+  // ---- #170: Eingabe-Box (statt prompt – geht auch im Vollbild und auf dem Handy) ----
+  var typeTarget = null;
+  function askText(f) {
+    if (!canControl) { $('shothint').textContent = 'Nur Zusehen – der Nutzer hat das Mitsteuern aus.'; return; }
+    typeTarget = f;
+    $('typelabel').textContent = 'Eingabe für: ' + (f.label || '(Feld)');
+    $('typein').value = '';
+    // im Bild-Rahmen (dann auch im Vollbild sichtbar); ohne Bild schwebend über der Seite
+    var box = $('typebox');
+    var host = $('shotwrap').classList.contains('hidden') ? document.body : $('shotwrap').querySelector('.shot__inner');
+    if (box.parentNode !== host) host.appendChild(box);
+    box.classList.toggle('fixed', host === document.body);
+    show(box, true);
+    $('typein').focus();
+  }
+  function closeType() { typeTarget = null; show($('typebox'), false); }
+  function applyType() {
+    if (!typeTarget) return;
+    var f = typeTarget;
+    var txt = $('typein').value || '';
+    closeType();
+    call('/act', { action: { type: 'type', target: f.id, text: txt.slice(0, 200) } }).then(function (r) {
+      $('shothint').textContent = r && r.rejected ? r.rejected : '✓ Übernommen: ' + (f.label || 'Feld');
+    });
+  }
+  $('typeok').onclick = applyType;
+  $('typecancel').onclick = closeType;
+  $('typein').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') applyType();
+    if (e.key === 'Escape') closeType();
+  });
+
+  // ---- #170: Rechte anzeigen, Scroll-Knöpfe, Protokoll, Prüfung ----
+  var PERM_TEXT = { screen: 'Bild sehen', control: 'mithelfen', logs: 'Protokoll', tests: 'Prüfen' };
+  function renderPerms(p) {
+    if (!p) return;
+    var on = Object.keys(PERM_TEXT).filter(function (k) { return p[k]; }).map(function (k) { return PERM_TEXT[k]; });
+    $('perms').textContent = 'Der Nutzer erlaubt dir: ' + (on.length ? on.join(' · ') : 'nur Chat');
+    show($('logsbtn'), Boolean(p.logs));
+    show($('diagbtn'), Boolean(p.tests));
+    if (!p.logs) show($('logpanel'), false);
+    if (!p.tests) show($('diagpanel'), false);
+    show($('scrollup'), Boolean(p.control));
+    show($('scrolldown'), Boolean(p.control));
+  }
+  function scrollUser(dir) {
+    call('/act', { action: { type: 'scroll', dir: dir } }).then(function (r) { if (r && r.rejected) $('shothint').textContent = r.rejected; });
+  }
+  $('scrollup').onclick = function () { scrollUser('up'); };
+  $('scrolldown').onclick = function () { scrollUser('down'); };
+  var logText = '';
+  $('logsbtn').onclick = function () { show($('logpanel'), $('logpanel').classList.contains('hidden')); };
+  $('logfetch').onclick = function () {
+    $('logout').textContent = 'Hole Protokoll …';
+    call('/logs', { filter: { level: $('loglevel').value, minutes: Number($('logminutes').value) || 0, area: $('logarea').value || '', text: $('logtext').value || '' } }).then(function (r) {
+      if (!r || r.rejected || r.error) { $('logout').textContent = (r && (r.rejected || r.error)) || 'Kein Protokoll bekommen.'; return; }
+      var lines = Array.isArray(r.logs) ? r.logs : [];
+      logText = lines.join('\n');
+      $('logout').textContent = lines.length ? logText : 'Keine passenden Zeilen.';
+    });
+  };
+  $('logcopy').onclick = function () {
+    if (logText && navigator.clipboard) navigator.clipboard.writeText(logText).then(function () { $('logcopy').textContent = 'Kopiert ✓'; });
+  };
+  $('logsave').onclick = function () {
+    if (!logText) return;
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([logText + '\n'], { type: 'text/plain' }));
+    a.download = 'pkmessenger-protokoll.txt';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+  $('diagbtn').onclick = function () {
+    show($('diagpanel'), true);
+    $('diagout').textContent = 'Prüfe …';
+    call('/diag', {}).then(function (r) {
+      var box = $('diagout');
+      box.textContent = '';
+      if (!r || r.rejected || r.error || !r.diag) { box.textContent = (r && (r.rejected || r.error)) || 'Keine Antwort.'; return; }
+      r.diag.items.forEach(function (i) {
+        var li = document.createElement('li');
+        li.className = i.ok ? 'ok' : i.optional ? 'opt' : 'bad';
+        li.textContent = i.text + (!i.ok && i.fix ? ' → ' + i.fix : '');
+        box.appendChild(li);
+      });
+    });
+  };
 
   // ---- #160: Werkzeuge: Einstellungen öffnen, Zeichnen, Chat ----
   function clamp(n) { return Math.min(1, Math.max(0, n)); }

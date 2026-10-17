@@ -118,4 +118,61 @@ function allowHelperAction(action, { view = {}, enabled = true, controlAllowed =
   return check(a, safe) ? { ok: true } : { ok: false, reason: 'Ziel nicht erlaubt oder nicht sichtbar.' };
 }
 
-module.exports = { redactView, allowHelperAction, scrub, looksSecret, SECRET_FIELD, BLACK };
+// #170: Der Nutzer kreuzt beim Zulassen an, was der Helfer darf. Ab Werk: Bild + Mitsteuern ja, Protokolle/Tests nein.
+const DEFAULT_PERMS = Object.freeze({ screen: true, control: true, logs: false, tests: false });
+function normPerms(p, base = DEFAULT_PERMS) {
+  const src = p && typeof p === 'object' ? p : {};
+  return Object.fromEntries(Object.keys(DEFAULT_PERMS).map((k) => [k, typeof src[k] === 'boolean' ? src[k] : base[k]]));
+}
+
+// Namen in „…“ (Server, Kanäle, Personen) für den Helfer schwärzen – feste Begriffe wie „Message Content Intent“ bleiben
+const KEEP_QUOTED = /^(Message Content Intent|Presence Intent|Server Members Intent|Bot|Privileged Gateway Intents|Bot einladen|Kanäle ansehen|Nachrichten senden)$/;
+const maskNames = (text) => String(text ?? '').replace(/„([^“]{0,120})“/g, (m, inner) => (KEEP_QUOTED.test(inner) ? m : `„${BLACK}“`));
+
+const LEVELS = { error: 3, warn: 2, info: 1 };
+/**
+ * #170: Protokollzeilen für den Helfer – gefiltert (Stufe, Bereich, Suchtext, Zeitraum) und nochmals geschwärzt.
+ * Zeilen-Format aus logger.js: "<ISO-Zeit> <STUFE> [<bereich>] <text>".
+ */
+// maxChars: muss auch über die Vermittler passen (eine Nachricht dort ist max. 48 KB groß)
+function redactLogLines(lines, { level = 'info', area = '', text = '', minutes = 0, max = 300, maxChars = 36000, now = Date.now() } = {}) {
+  const minLevel = LEVELS[level] || 1;
+  const areaQ = String(area || '').toLowerCase().slice(0, 40);
+  const textQ = String(text || '').toLowerCase().slice(0, 80);
+  const since = minutes > 0 ? now - minutes * 60 * 1000 : 0;
+  const out = [];
+  for (const raw of Array.isArray(lines) ? lines : []) {
+    const m = /^(\S+) (ERROR|WARN|INFO) \[([^\]]*)\] (.*)$/.exec(String(raw || ''));
+    if (!m) continue;
+    const [, at, lvl, scope, msg] = m;
+    if ((LEVELS[lvl.toLowerCase()] || 0) < minLevel) continue;
+    if (since && !(Date.parse(at) >= since)) continue;
+    if (areaQ && !scope.toLowerCase().includes(areaQ)) continue;
+    if (textQ && !`${scope} ${msg}`.toLowerCase().includes(textQ)) continue;
+    const safe = maskNames(msg)
+      .split(/\s+/)
+      .map((w) => (looksSecret(w) ? BLACK : w))
+      .join(' ');
+    out.push(`${at} ${lvl} [${scope}] ${safe}`.slice(0, 500));
+  }
+  const last = out.slice(-Math.max(1, Math.min(1000, max)));
+  let size = last.reduce((n, l) => n + l.length + 1, 0);
+  while (last.length > 1 && size > maxChars) size -= last.shift().length + 1; // älteste zuerst weglassen
+  return last;
+}
+
+/** #170: Ergebnis der Einrichtungs-Prüfung für den Helfer – ohne Server-/Bot-Namen, ohne IDs und Links. */
+function redactCheck(result) {
+  const items = Array.isArray(result?.items) ? result.items.slice(0, 20) : [];
+  return {
+    ready: Boolean(result?.ready),
+    items: items.map((i) => ({
+      ok: Boolean(i?.ok),
+      optional: Boolean(i?.optional),
+      text: maskNames(String(i?.text || '').replace(/angemeldet als .+$/, 'angemeldet')).slice(0, 200),
+      fix: i?.fix ? maskNames(String(i.fix)).slice(0, 200) : null,
+    })),
+  };
+}
+
+module.exports = { redactView, allowHelperAction, scrub, looksSecret, redactLogLines, redactCheck, normPerms, DEFAULT_PERMS, SECRET_FIELD, BLACK };

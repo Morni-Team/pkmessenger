@@ -80,9 +80,7 @@ export function HelpDialog({ onClose, toast }) {
                   </span>
                 )}
                 {connected ? <span className="ok">✅ Helfer verbunden</span> : <span className="muted small">Warte auf den Helfer …</span>}
-                <label className="composer__ping">
-                  <input type="checkbox" defaultChecked={status?.controlAllowed !== false} onChange={(e) => api.helpControl({ on: e.target.checked }).catch(() => {})} /> Helfer darf mithelfen (sonst nur zusehen)
-                </label>
+                {status?.perms && <PermChecks perms={status.perms} onChange={(p) => api.helpPerms(p).then(setStatus).catch(() => {})} />}
                 <button className="btn btn--danger btn--small" onClick={stop}>
                   ⏹ Hilfe beenden
                 </button>
@@ -138,24 +136,7 @@ export function HelpController({ toast }) {
 
   return (
     <>
-      {pending && (
-        <div className="modal-backdrop">
-          <div className="modal confirm" role="dialog" aria-label="Helfer zulassen">
-            <h3>🙋 Darf dieser Helfer verbinden?</h3>
-            <p>
-              <b>{pending.helper || 'Jemand'}</b> möchte dir bei der Einrichtung helfen. Er sieht nur die Einrichtung, <b>nie deine Chats</b>.
-            </p>
-            <div className="confirm__actions">
-              <button className="btn btn--ghost" onClick={() => api.helpDecide({ id: pending.id, allow: false }).catch(() => {})}>
-                Ablehnen
-              </button>
-              <button className="btn btn--primary" onClick={() => api.helpDecide({ id: pending.id, allow: true }).catch(() => {})}>
-                Zulassen
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {pending && <HelpApprove key={pending.id} pending={pending} />}
       {active && (
         <div className="help-bar" role="status">
           🙋 Fernhilfe aktiv – Chats verborgen
@@ -186,6 +167,87 @@ export function HelpController({ toast }) {
         </div>
       )}
     </>
+  );
+}
+
+// #170: Was darf der Helfer? Wird beim Zulassen angekreuzt und ist während der Hilfe jederzeit änderbar.
+const PERMS = [
+  { key: 'screen', label: '👀 Bild der App sehen', hint: 'nur Einstellungen/Einrichtung – Chats, Namen und Geheimnisse sind immer schwarz' },
+  { key: 'control', label: '🖱 Mithelfen', hint: 'klicken, scrollen, in normale Felder tippen – nie Passwörter oder Token' },
+  { key: 'logs', label: '📄 Protokoll abrufen', hint: 'technische Fehlerzeilen, gefiltert – ohne Token, Passwörter und Namen' },
+  { key: 'tests', label: '🩺 Einrichtung prüfen', hint: 'Bot-Anmeldung, Erlaubnisse, Kanäle – ohne Server-Namen' },
+];
+
+export function PermChecks({ perms, onChange }) {
+  return (
+    <div className="help-perms">
+      {PERMS.map((p) => (
+        <label key={p.key} className="help-perms__row">
+          <input type="checkbox" checked={Boolean(perms[p.key])} onChange={(e) => onChange({ ...perms, [p.key]: e.target.checked })} />
+          <span>
+            {p.label}
+            <span className="muted small"> – {p.hint}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// #170: „Darf dieser Helfer verbinden?“ – mit Rechten zum Ankreuzen und App-Passwort bzw. Windows Hello
+function HelpApprove({ pending }) {
+  const [perms, setPerms] = useState(() => ({ screen: true, control: true, logs: false, tests: false, ...(pending.perms || {}) }));
+  const [lock, setLock] = useState(null);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.lockStatus().then(setLock).catch(() => setLock({ enabled: false }));
+  }, []);
+  const decide = async (allow, hello = false) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.helpDecide({ id: pending.id, allow, ...(allow ? { perms, ...(lock?.enabled ? (hello ? { hello: true } : { password }) : {}) } : {}) });
+    } catch (e) {
+      setError(e.message + (e.hint ? ` ${e.hint}` : ''));
+      setPassword('');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const needPw = Boolean(lock?.enabled);
+  return (
+    <div className="modal-backdrop">
+      <div className="modal confirm help-approve" role="dialog" aria-label="Helfer zulassen">
+        <h3>🙋 Darf dieser Helfer verbinden?</h3>
+        <p>
+          <b>{pending.helper || 'Jemand'}</b> möchte dir helfen. <b>Deine Chats sieht er nie.</b> Kreuze an, was er darf – ändern kannst du das jederzeit.
+        </p>
+        <PermChecks perms={perms} onChange={setPerms} />
+        {needPw ? (
+          <div className="settings__row">
+            <input type="password" autoComplete="current-password" placeholder="App-Passwort zum Bestätigen" aria-label="App-Passwort" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && password && !busy && decide(true)} autoFocus />
+            {lock.hello && (
+              <button className="btn btn--ghost btn--small" disabled={busy} onClick={() => decide(true, true)}>
+                🔐 Windows Hello
+              </button>
+            )}
+          </div>
+        ) : (
+          <p className="muted small">💡 Tipp: Mit einem App-Passwort (Einstellungen → Sicherheit &amp; Start) fragt PKMessenger hier zusätzlich danach.</p>
+        )}
+        {error && <p className="warn small">{error}</p>}
+        <div className="confirm__actions">
+          <button className="btn btn--ghost" disabled={busy} onClick={() => decide(false)}>
+            Ablehnen
+          </button>
+          <button className="btn btn--primary" disabled={busy || (needPw && !password)} onClick={() => decide(true)}>
+            Zulassen
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
