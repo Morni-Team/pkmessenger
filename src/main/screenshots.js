@@ -44,6 +44,14 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
   await js(win, `document.querySelector('.privacy .btn--primary')?.click()`);
   await wait(1500);
   console.log(`[datenschutz] ${consent} · nach dem Lesen gesperrt: ${afterScroll} · danach sichtbar: ${await js(win, `Boolean(document.querySelector('.privacy'))`)}`);
+  // #167: Fenster wird größer, der Text passt ganz hinein (nichts mehr zu scrollen) → Knopf muss trotzdem frei werden
+  await js(win, `localStorage.removeItem('pk.privacy.v1')`);
+  win.webContents.reload();
+  await wait(3000);
+  const grow = await js(win, `(async () => { const b = document.querySelector('.privacy__text'); if (!b) return 'kein Text'; const vorher = document.querySelector('.privacy .btn--primary').disabled; b.style.maxHeight = 'none'; b.style.height = b.scrollHeight + 40 + 'px'; await new Promise((r) => setTimeout(r, 400)); return JSON.stringify({ vorher, nachher: document.querySelector('.privacy .btn--primary').disabled }); })()`);
+  await js(win, `document.querySelector('.privacy .btn--primary')?.click()`);
+  await wait(1500);
+  console.log(`[datenschutz-gross] ${grow} · danach sichtbar: ${await js(win, `Boolean(document.querySelector('.privacy'))`)}`);
   // Gleicher Ausgangszustand wie beim ersten Start (Aussehen, Sortierung): Auswahl früherer Läufe verwerfen
   const hadPrefs = await js(win, `(() => { const had = localStorage.getItem('pk.prefs.v1') !== null; localStorage.removeItem('pk.prefs.v1'); return had; })()`);
   if (hadPrefs) {
@@ -1297,13 +1305,26 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
     await wait(400);
     await js(win, `[...document.querySelectorAll('.modal .btn--primary')].find((b) => b.textContent.includes('Hilfe anfordern'))?.click()`);
     await wait(700);
-    const helpInfo = await js(win, `JSON.stringify({ code: document.querySelector('.login-code')?.textContent?.length || 0, qr: Boolean(document.querySelector('.invite__qr')), zusehen: Boolean([...document.querySelectorAll('.composer__ping')].find((l) => l.textContent.includes('mithelfen'))) })`);
+    const helpInfo = await js(win, `JSON.stringify({ code: document.querySelector('.login-code')?.textContent?.length || 0, qr: Boolean(document.querySelector('.invite__qr')), zusehen: Boolean([...document.querySelectorAll('.help-perms__row')].find((l) => l.textContent.includes('Mithelfen'))), rechte: document.querySelectorAll('.modal .help-perms__row').length })`);
     await shoot(win, dir, '86-fernhilfe');
     console.log(`[fernhilfe] ${helpInfo}`);
     await js(win, `[...document.querySelectorAll('.modal .btn--danger')].find((b) => b.textContent.includes('beenden'))?.click()`);
     await js(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   } catch (e) {
     console.log(`[fernhilfe] Fehler: ${e.message}`);
+  }
+  // #167: Oberfläche stürzt ab → wird von selbst neu geladen (statt leerem Fenster)
+  try {
+    win.webContents.forcefullyCrashRenderer();
+    let back = false;
+    for (let i = 0; i < 30 && !back; i++) {
+      await wait(300);
+      // abgestürzte Seite antwortet nie → mit Zeitlimit fragen
+      back = await Promise.race([js(win, `Boolean(document.querySelector('.layout, .center-screen'))`).catch(() => false), wait(1000).then(() => false)]);
+    }
+    console.log(`[absturz] Oberfläche nach Absturz wieder da: ${back}`);
+  } catch (e) {
+    console.log(`[absturz] Fehler: ${e.message}`);
   }
 }
 
