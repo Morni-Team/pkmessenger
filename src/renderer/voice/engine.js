@@ -6,6 +6,7 @@ import { voicePacket, onVoiceAudio } from '../api';
 import { prefs } from '../prefs';
 import { SAMPLE_RATE, FRAME_SAMPLES, CHANNELS, createFrameAssembler, rms, nextPlayTime } from '../../shared/audio-frames';
 import { micConstraints, gateStep, gateGain, userGain, applyMicGain, HIGHPASS_HZ } from '../../shared/voice-settings';
+import { createDenoiser } from './denoise';
 
 const OPUS_CONFIG = { codec: 'opus', sampleRate: SAMPLE_RATE, numberOfChannels: CHANNELS, bitrate: 64000, opus: { frameDuration: 20000 } };
 
@@ -19,7 +20,7 @@ export function micErrorText(err) {
 }
 
 // Zähler für Diagnose/automatische Tests (nur Zahlen, keine Audiodaten).
-const stats = (window.__pkVoiceStats = { encoded: 0, decoded: 0, played: 0, gated: 0, skippedMuted: 0 });
+const stats = (window.__pkVoiceStats = { encoded: 0, decoded: 0, played: 0, gated: 0, skippedMuted: 0, denoise: 'aus' });
 
 export function createVoiceEngine({ onLevel = () => {} } = {}) {
   let ctx = null;
@@ -49,7 +50,7 @@ export function createVoiceEngine({ onLevel = () => {} } = {}) {
     return ctx;
   }
 
-  const micKey = (p) => JSON.stringify([p.micDeviceId, p.voiceFx.echo, p.voiceFx.noise, p.voiceFx.agc]);
+  const micKey = (p) => JSON.stringify([p.micDeviceId, p.voiceFx.echo, p.voiceFx.noise, p.voiceFx.agc, p.voiceFx.ai]);
   let lastMic = micKey(prefs.get());
   const offPrefs = prefs.subscribe((p) => {
     applyOutput(p);
@@ -119,8 +120,34 @@ export function createVoiceEngine({ onLevel = () => {} } = {}) {
     highpass.type = 'highpass';
     highpass.frequency.value = HIGHPASS_HZ;
     source.connect(highpass);
-    highpass.connect(node);
-    mic = { stream, source, highpass, node, encoder, assembler };
+    // #177: KI-Rauschfilter zwischen Hochpass und Aufnahme. Klappt er nicht (Laden/Rechnen), geht es ohne weiter –
+    // lieber ungefiltert als stumm.
+    let denoise = null;
+    try {
+      denoise = await createDenoiser(c, p.voiceFx.ai);
+    } catch (e) {
+      console.warn('[Sprache] KI-Rauschfilter nicht verfügbar – weiter ohne', e);
+    }
+    if (denoise) {
+      highpass.connect(denoise);
+      denoise.connect(node);
+      denoise.onprocessorerror = () => {
+        console.warn('[Sprache] KI-Rauschfilter ausgefallen – weiter ohne');
+        stats.denoise = 'fehler';
+        try {
+          highpass.disconnect();
+          denoise.disconnect();
+        } catch {
+          /* egal */
+        }
+        highpass.connect(node);
+      };
+      stats.denoise = p.voiceFx.ai;
+    } else {
+      highpass.connect(node);
+      stats.denoise = 'aus';
+    }
+    mic = { stream, source, highpass, denoise, node, encoder, assembler };
   }
 
   function stopMic() {
@@ -131,6 +158,8 @@ export function createVoiceEngine({ onLevel = () => {} } = {}) {
     try {
       m.source.disconnect();
       m.highpass?.disconnect();
+      m.denoise?.disconnect();
+      m.denoise?.destroy?.(); // WASM-Speicher im Audio-Thread freigeben
       m.node.disconnect();
     } catch {
       /* egal */

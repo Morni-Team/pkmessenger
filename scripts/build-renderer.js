@@ -16,6 +16,10 @@ async function main() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
   fs.copyFileSync(path.join(SRC, 'index.html'), path.join(OUT, 'index.html'));
+  // #177: KI-Rauschfilter – fertige AudioWorklet-Skripte aus dem Paket als eigene Dateien (CSP: script-src 'self')
+  for (const [name, file] of [['rnnoise-worklet.js', 'rnnoiseWorklet.js'], ['gtcrn-worklet.js', 'gtcrnWorklet.js']]) {
+    fs.copyFileSync(require.resolve(`@sapphi-red/web-noise-suppressor/${file}`), path.join(OUT, name));
+  }
 
   const options = {
     entryPoints: {
@@ -33,6 +37,7 @@ async function main() {
     minify: !dev,
     sourcemap: dev ? 'inline' : false,
     legalComments: 'none',
+    loader: { '.wasm': 'binary' }, // #177: WASM des Rauschfilters steckt im Bundle (CSP: connect-src 'none' → kein fetch)
     define: { 'process.env.NODE_ENV': JSON.stringify(dev ? 'development' : 'production') },
     logLevel: 'info',
   };
