@@ -45,7 +45,8 @@ export function ShareLoginDialog({ onClose, toast }) {
         <p>Melde PKMessenger auf dem Handy oder einem anderen PC mit demselben Bot an – ohne den Token abzutippen.</p>
         {error && <p className="warn">{error}</p>}
         {data && (
-          <div className="invite__box">
+          // #170: QR-Code + Code zusammen = Bot-Token → für einen Fernhelfer immer geschwärzt
+          <div className="invite__box" data-private>
             {qr && <img className="invite__qr" src={qr} alt="QR-Code zum Anmelden" />}
             <div className="invite__actions">
               <span className="muted small">Code (nur hier sichtbar):</span>

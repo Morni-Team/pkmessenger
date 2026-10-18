@@ -228,10 +228,20 @@ const help = createHelp({
   p2p: demo || SHOTS_ARG ? null : createP2PBridge({ BrowserWindow, ipcMain, htmlPath: path.join(ROOT, 'build', 'p2p-host', 'index.html'), preloadPath: path.join(__dirname, '..', 'preload', 'p2p-preload.js'), logger }),
   p2pPage: HELP_PAGE,
   // #158: echtes Bild der App für den Helfer – Chats & Geheimnisse werden in help-screen.js geschwärzt
-  captureScreen: (view, { small = false } = {}) =>
+  captureScreen: (view, { small = false, chats = false } = {}) =>
     mainWindow && !mainWindow.isDestroyed()
-      ? captureForHelper({ view, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
+      ? captureForHelper({ view, chats, ...(small ? { maxWidth: 560, quality: 35 } : {}), capture: () => mainWindow.webContents.capturePage(), nativeImage, freshView: () => mainWindow.webContents.executeJavaScript('window.__pkHelpFreshView ? window.__pkHelpFreshView() : null', true) })
       : null,
+  // #170: Protokoll + Einrichtungs-Prüfung für den Helfer – nur wenn der Nutzer es angekreuzt hat (help.js prüft das),
+  // geschwärzt in help-redact.js
+  getLogs: async () => {
+    try {
+      return (await fs.promises.readFile(logger.file, 'utf8')).split('\n').slice(-3000);
+    } catch {
+      return logger.tail(200);
+    }
+  },
+  runCheck: () => service.setupCheck(),
 });
 /** „Hilfe anfordern“: Einmal-Code + QR-Code (als Bild) für die Oberfläche */
 help.requestWithQr = async () => {
@@ -325,6 +335,7 @@ async function openExternal(url) {
   return true;
 }
 
+let rendererCrashes = [];
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -350,6 +361,22 @@ function createWindow() {
   // Bildschirmschutz: Windows blendet das Fenster bei Screenshots/Aufnahmen anderer Programme schwarz aus
   if (store.get().screenProtection === true) mainWindow.setContentProtection(true);
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // #167 „App öffnet nicht“: kommt ready-to-show nie (Oberfläche hängt/lädt nicht), blieb das Fenster für immer
+  // unsichtbar – und wegen der Einzel-Instanz-Sperre ging auch kein neuer Start. Spätestens nach 10 s zeigen.
+  const win = mainWindow;
+  let shownOnce = false; // später absichtlich versteckt (Hintergrundbetrieb) → nicht wieder aufpoppen
+  win.once('show', () => (shownOnce = true));
+  setTimeout(() => {
+    if (!shownOnce && !win.isDestroyed() && !win.isVisible() && !SHOTS_ARG) {
+      logger.warn('main', 'ready-to-show missing after 10s - showing window anyway');
+      win.show();
+    }
+  }, 10000).unref?.();
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    logger.error('main', `did-fail-load: ${code} ${desc}`, path.basename(String(url || '')));
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  });
 
   // Keine Navigation weg von der App; Links öffnen im Standardbrowser.
   mainWindow.webContents.on('will-navigate', (e, url) => {
@@ -363,7 +390,14 @@ function createWindow() {
     if (!app.isPackaged && input.control && input.shift && input.key.toLowerCase() === 'i') mainWindow.webContents.toggleDevTools();
   });
 
-  mainWindow.webContents.on('render-process-gone', (_e, d) => logger.error('renderer', `render-process-gone: ${d?.reason} (${d?.exitCode})`));
+  mainWindow.webContents.on('render-process-gone', (_e, d) => {
+    logger.error('renderer', `render-process-gone: ${d?.reason} (${d?.exitCode})`);
+    // #167: Oberfläche abgestürzt → neu laden statt leeres Fenster (höchstens 3× in 2 Minuten, sonst Endlos-Schleife)
+    const t = Date.now();
+    rendererCrashes = rendererCrashes.filter((x) => t - x < 120000).concat(t);
+    if (d?.reason === 'clean-exit' || rendererCrashes.length > 3 || win.isDestroyed()) return;
+    setTimeout(() => !win.isDestroyed() && win.webContents.reload(), 500);
+  });
   mainWindow.loadFile(RENDERER_HTML, SHOTS_ARG ? { query: { shots: '1' } } : undefined);
   if (SHOTS_ARG) {
     // Testlauf: Fehler aus der Oberfläche im Terminal sichtbar machen

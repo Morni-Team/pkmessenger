@@ -59,7 +59,7 @@ function TokenSection({ toast }) {
         {info?.stored ? (
           <span className="ok">
             🔐 Verschlüsselt gespeichert ({pc('Windows-Datenschutz', 'Android-Schlüsselspeicher')}) · Bot-ID{' '}
-            <button className="link-btn" onClick={() => setShowId((v) => !v)} title={showId ? 'Verstecken' : 'Anzeigen'}>
+            <button className="link-btn" data-private onClick={() => setShowId((v) => !v)} title={showId ? 'Verstecken' : 'Anzeigen'}>
               {showId ? info.botId : '••••••••'} {showId ? '🙈' : '👁'}
             </button>
           </span>

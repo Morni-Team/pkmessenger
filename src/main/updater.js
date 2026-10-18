@@ -172,9 +172,10 @@ function createUpdater({ autoUpdater, isPackaged, version, repo, emit, platform 
       return res.json();
     };
     const gh = (u) => (typeof u === 'string' && u.startsWith('https://github.com/') ? u.slice(0, 500) : null);
-    const list = await get(`https://api.github.com/repos/${repo}/releases?per_page=8`);
+    const list = await get(`https://api.github.com/repos/${repo}/releases?per_page=20`);
     const releases = (Array.isArray(list) ? list : [])
       .filter((r) => r && !r.draft && /^v\d+\.\d+\.\d+$/.test(String(r.tag_name)))
+      .slice(0, 8) // #167: eigene android-v…-Releases fallen oben raus, angezeigt werden weiter 8
       .map((r) => ({
         tag: r.tag_name,
         name: String(r.name || r.tag_name).slice(0, 100),

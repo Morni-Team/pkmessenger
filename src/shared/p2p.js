@@ -9,9 +9,10 @@
 // Läuft im Browser (Helfer-Seite) und im versteckten P2P-Fenster am PC. Keine Node-APIs.
 
 const nacl = require('tweetnacl');
-const { schnorr } = require('@noble/curves/secp256k1');
-const { sha256 } = require('@noble/hashes/sha256');
-const { bytesToHex } = require('@noble/hashes/utils');
+// #44: @noble v2 – nur noch ESM mit „.js“-Pfaden und nur noch Bytes (keine Hex-Texte) bei sign/verify
+const { schnorr } = require('@noble/curves/secp256k1.js');
+const { sha256 } = require('@noble/hashes/sha2.js');
+const { bytesToHex, hexToBytes } = require('@noble/hashes/utils.js');
 
 const NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://relay.snort.social', 'wss://nostr.mom', 'wss://offchain.pub', 'wss://nostr.oxtr.dev'];
 const KIND = 25097; // ephemer: wird nicht gespeichert
@@ -72,7 +73,7 @@ function makeEvent(sk, content, topic, nowMs) {
   const created_at = Math.floor(nowMs / 1000);
   const tags = [['t', topic]];
   const id = bytesToHex(sha256(enc.encode(JSON.stringify([0, pubkey, created_at, KIND, tags, content]))));
-  return { id, pubkey, created_at, kind: KIND, tags, content, sig: bytesToHex(schnorr.sign(id, sk)) };
+  return { id, pubkey, created_at, kind: KIND, tags, content, sig: bytesToHex(schnorr.sign(hexToBytes(id), sk)) };
 }
 
 /**
@@ -81,7 +82,7 @@ function makeEvent(sk, content, topic, nowMs) {
  */
 function createSignal({ key, role, onSignal, relays = NOSTR_RELAYS, WebSocketImpl = globalThis.WebSocket, now = () => Date.now() }) {
   const topic = topicOf(key);
-  const sk = schnorr.utils.randomPrivateKey();
+  const sk = schnorr.utils.randomSecretKey();
   const me = bytesToHex(schnorr.getPublicKey(sk));
   const sockets = [];
   const seen = new Set();

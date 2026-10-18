@@ -44,6 +44,14 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
   await js(win, `document.querySelector('.privacy .btn--primary')?.click()`);
   await wait(1500);
   console.log(`[datenschutz] ${consent} · nach dem Lesen gesperrt: ${afterScroll} · danach sichtbar: ${await js(win, `Boolean(document.querySelector('.privacy'))`)}`);
+  // #167: Fenster wird größer, der Text passt ganz hinein (nichts mehr zu scrollen) → Knopf muss trotzdem frei werden
+  await js(win, `localStorage.removeItem('pk.privacy.v1')`);
+  win.webContents.reload();
+  await wait(3000);
+  const grow = await js(win, `(async () => { const b = document.querySelector('.privacy__text'); if (!b) return 'kein Text'; const vorher = document.querySelector('.privacy .btn--primary').disabled; b.style.maxHeight = 'none'; b.style.height = b.scrollHeight + 40 + 'px'; await new Promise((r) => setTimeout(r, 400)); return JSON.stringify({ vorher, nachher: document.querySelector('.privacy .btn--primary').disabled }); })()`);
+  await js(win, `document.querySelector('.privacy .btn--primary')?.click()`);
+  await wait(1500);
+  console.log(`[datenschutz-gross] ${grow} · danach sichtbar: ${await js(win, `Boolean(document.querySelector('.privacy'))`)}`);
   // Gleicher Ausgangszustand wie beim ersten Start (Aussehen, Sortierung): Auswahl früherer Läufe verwerfen
   const hadPrefs = await js(win, `(() => { const had = localStorage.getItem('pk.prefs.v1') !== null; localStorage.removeItem('pk.prefs.v1'); return had; })()`);
   if (hadPrefs) {
@@ -1224,6 +1232,10 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
         await wait(800);
         await hjs(`document.getElementById('name').value='Alex'; document.getElementById('code').value=${JSON.stringify(code)}; document.getElementById('go').click();`);
         for (let i = 0; i < 20 && !(await js(win, `Boolean([...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen'))`)); i++) await wait(250);
+        // #170: Rechte ankreuzen (Protokoll + Prüfen) – so sieht das Zulassen-Fenster aus
+        await js(win, `[...document.querySelectorAll('.help-approve .help-perms__row')].filter((l) => /Protokoll|Einrichtung prüfen/.test(l.textContent)).forEach((l) => { const i = l.querySelector('input'); if (!i.checked) i.click(); })`);
+        await wait(300);
+        await shoot(win, dir, '89a-hilfe-zulassen');
         await js(win, `[...document.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Zulassen')?.click()`);
         for (let i = 0; i < 30 && !(await hjs(`!document.getElementById('shotwrap').classList.contains('hidden') && document.getElementById('shot').naturalWidth > 0`)); i++) await wait(300);
         const r = {};
@@ -1243,6 +1255,35 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
         await hjs(`document.getElementById('drawmode').click(); (() => { const img = document.getElementById('shot'); const b = img.getBoundingClientRect(); const ev = (t, fx, fy, tgt) => (tgt || img).dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: b.left + b.width * fx, clientY: b.top + b.height * fy })); ev('mousedown', 0.3, 0.3); ev('mousemove', 0.4, 0.35); ev('mousemove', 0.5, 0.4); ev('mouseup', 0.5, 0.4, window); })(); document.getElementById('drawmode').click();`);
         await wait(900);
         r.zeichnungBeimNutzer = await js(win, `document.querySelectorAll('.help-draw polyline').length`);
+        // #170: Rechte, Prüfung, Protokoll und die Eingabe-Box („Übernehmen“) beim Helfer
+        r.rechte = await hjs(`document.getElementById('perms').textContent`);
+        await hjs(`document.getElementById('diagbtn').click()`);
+        await wait(900);
+        r.pruefung = await hjs(`[...document.querySelectorAll('#diagout li')].map((l) => l.className).join(',')`);
+        await hjs(`document.getElementById('logsbtn').click(); document.getElementById('logminutes').value = '0'; document.getElementById('logfetch').click();`);
+        await wait(900);
+        r.protokoll = await hjs(`document.getElementById('logout').textContent.split('\\n').length`);
+        r.eingabeBox = await hjs(`(() => { const b = [...document.querySelectorAll('#fields .field')].find((x) => /suchen/i.test(x.textContent)); if (!b) return 'kein Feld'; b.click(); return !document.getElementById('typebox').classList.contains('hidden'); })()`);
+        await hjs(`document.getElementById('typein').value = 'Audio'; document.getElementById('typeok').click();`);
+        await wait(900);
+        r.eingabeBeimNutzer = await js(win, `document.querySelector('.modal.settings input')?.value || ''`);
+        // #170: Nutzer schickt ein Bildschirmfoto → kommt beim Helfer im Chat an
+        await js(win, `document.querySelector('[aria-label="Bildschirmfoto an den Helfer"]')?.click()`);
+        for (let i = 0; i < 20 && !(await hjs(`Boolean(document.querySelector('#hchatlog img.snap')?.naturalWidth)`)); i++) await wait(300);
+        r.fotoBeimHelfer = await hjs(`(() => { const i = document.querySelector('#hchatlog img.snap'); return i ? i.naturalWidth + 'x' + i.naturalHeight : null; })()`);
+        // #170: Chat-Bereich zeigen (nur verpixelt): Haken setzen, Einstellungen schließen → Helfer sieht Blöcke
+        await js(win, `window.api.helpPerms({ chats: true })`);
+        await js(win, `document.querySelector('.settings .icon-btn')?.click()`);
+        for (let i = 0; i < 25 && !(await hjs(`/verpixelt/.test(document.getElementById('shothint').textContent)`)); i++) await wait(300);
+        await wait(800);
+        r.chatVerpixelt = await hjs(`/verpixelt/.test(document.getElementById('shothint').textContent) && /Chat-Bereich/.test(document.getElementById('perms').textContent) && document.getElementById('shot').naturalWidth > 0`);
+        // genau das Bild, das beim Helfer angekommen ist (verstecktes Fenster malt nicht neu → nicht capturePage)
+        const pix = await hjs(`document.getElementById('shot').src`);
+        if (/^data:image\/jpeg;base64,/.test(pix)) fs.writeFileSync(path.join(dir, '89e-helfer-chat-verpixelt.jpg'), Buffer.from(pix.split(',')[1], 'base64'));
+        await js(win, `window.api.helpPerms({ chats: false })`);
+        await js(win, `window.dispatchEvent(new CustomEvent('pk:open-settings', { detail: {} }))`);
+        await wait(600);
+        await js(win, `document.querySelector('.settings__nav [data-nav="aussehen"]')?.click()`);
         await wait(600);
         fs.writeFileSync(path.join(dir, '89d-helfer-seite.png'), (await helper.webContents.capturePage()).toPNG());
         console.log(`[helfer-echt] ${JSON.stringify(r)}`);
@@ -1281,13 +1322,26 @@ async function runScreenshots(win, dir, { demo, stats, simulate, captureHelp = n
     await wait(400);
     await js(win, `[...document.querySelectorAll('.modal .btn--primary')].find((b) => b.textContent.includes('Hilfe anfordern'))?.click()`);
     await wait(700);
-    const helpInfo = await js(win, `JSON.stringify({ code: document.querySelector('.login-code')?.textContent?.length || 0, qr: Boolean(document.querySelector('.invite__qr')), zusehen: Boolean([...document.querySelectorAll('.composer__ping')].find((l) => l.textContent.includes('mithelfen'))) })`);
+    const helpInfo = await js(win, `JSON.stringify({ code: document.querySelector('.login-code')?.textContent?.length || 0, qr: Boolean(document.querySelector('.invite__qr')), zusehen: Boolean([...document.querySelectorAll('.help-perms__row')].find((l) => l.textContent.includes('Mithelfen'))), rechte: document.querySelectorAll('.modal .help-perms__row').length })`);
     await shoot(win, dir, '86-fernhilfe');
     console.log(`[fernhilfe] ${helpInfo}`);
     await js(win, `[...document.querySelectorAll('.modal .btn--danger')].find((b) => b.textContent.includes('beenden'))?.click()`);
     await js(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
   } catch (e) {
     console.log(`[fernhilfe] Fehler: ${e.message}`);
+  }
+  // #167: Oberfläche stürzt ab → wird von selbst neu geladen (statt leerem Fenster)
+  try {
+    win.webContents.forcefullyCrashRenderer();
+    let back = false;
+    for (let i = 0; i < 30 && !back; i++) {
+      await wait(300);
+      // abgestürzte Seite antwortet nie → mit Zeitlimit fragen
+      back = await Promise.race([js(win, `Boolean(document.querySelector('.layout, .center-screen'))`).catch(() => false), wait(1000).then(() => false)]);
+    }
+    console.log(`[absturz] Oberfläche nach Absturz wieder da: ${back}`);
+  } catch (e) {
+    console.log(`[absturz] Fehler: ${e.message}`);
   }
 }
 

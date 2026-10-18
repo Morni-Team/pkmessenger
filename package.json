@@ -1,7 +1,7 @@
 {
   "name": "pkmessenger",
   "productName": "PKMessenger",
-  "version": "0.27.1",
+  "version": "0.27.2",
   "description": "PKMessenger – Bot-Control-Center für Discord über die offizielle Bot-API",
   "main": "src/main/main.js",
   "private": true,
@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
-    "@noble/curves": "1.9.7",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "discord.js": "14.27.0",
     "qrcode-generator": "2.0.4",
     "tweetnacl": "1.0.3",
@@ -36,11 +37,11 @@
     "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/maker-zip": "8.0.1",
     "@electron-forge/publisher-github": "8.0.1",
-    "electron": "44.6.0",
+    "electron": "44.9.0",
     "esbuild": "0.28.2",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-window": "2.3.3"
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-window": "2.3.4"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

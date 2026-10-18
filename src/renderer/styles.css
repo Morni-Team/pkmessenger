@@ -5192,3 +5192,11 @@ body.help-active .help-bar {
   gap: 4px;
   font-size: 13px;
 }
+
+/* #170: Rechte des Fernhelfers zum Ankreuzen */
+.help-perms { display: grid; gap: 6px; margin: 8px 0 10px; text-align: left; }
+.help-perms__row { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+.help-perms__row input { margin-top: 2px; flex: none; }
+.help-approve { max-width: 520px; }
+.help-approve .settings__row input[type='password'] { flex: 1; min-width: 0; }
+.help-chat__note { margin: 0; padding: 0 10px 8px; }

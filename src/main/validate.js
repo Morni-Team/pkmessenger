@@ -600,6 +600,25 @@ const validators = {
     if (typeof on !== 'boolean') throw new ValidationError('Ungültiges Feld "on".');
     return on;
   },
+  // #170: Rechte des Fernhelfers – nur bekannte Schalter, nur true/false
+  helpPerms(p) {
+    const src = obj(p);
+    const out = {};
+    for (const k of ['screen', 'chats', 'control', 'logs', 'tests']) {
+      if (src[k] === undefined) continue;
+      if (typeof src[k] !== 'boolean') throw new ValidationError(`Ungültiges Recht "${k}".`);
+      out[k] = src[k];
+    }
+    return out;
+  },
+  // #170: Helfer zulassen – mit angekreuzten Rechten und (falls App-Passwort gesetzt) Passwort oder Windows Hello
+  helpDecide(p) {
+    const { id, allow } = validators.remoteDecide(p);
+    const { perms, password, hello } = obj(p);
+    if (password !== undefined && (typeof password !== 'string' || password.length > 200)) throw new ValidationError('Ungültiges Passwort.');
+    if (hello !== undefined && typeof hello !== 'boolean') throw new ValidationError('Ungültiges Feld "hello".');
+    return { id, allow, perms: perms === undefined ? null : validators.helpPerms(perms), password: password ?? null, hello: hello === true };
+  },
   memorySummary(p) {
     const { userId, summary } = obj(p);
     if (typeof summary !== 'string' || summary.length > 4000) throw new ValidationError('Die Zusammenfassung darf höchstens 4000 Zeichen haben.');

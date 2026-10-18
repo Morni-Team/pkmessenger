@@ -12,10 +12,15 @@
 const SECRET_FIELD = /token|passwor|passwort|secret|schlüssel|key|code|\.env/i;
 const BLACK = '███████';
 
+// #170: „Helfer kann den Bot-Token sehen, wenn der Nutzer ihn aufdeckt“ – darum zusätzlich am INHALT erkennen:
+// Discord-Bot-Token (drei Teile mit Punkten), Anmelde-Links und lange Zufalls-Zeichenketten (Schlüssel, Codes).
+const TOKEN_LIKE = /[A-Za-z\d_-]{20,}\.[A-Za-z\d_-]{5,}\.[A-Za-z\d_-]{20,}|#d=[A-Za-z\d_-]{16,}|[A-Za-z\d_+/=-]{40,}/;
+const looksSecret = (text) => typeof text === 'string' && TOKEN_LIKE.test(text);
+
 /** Nachrichten/Namen/Geheimnisse aus einem Wert entfernen. Tief, aber begrenzt (kein Endlos-Objekt). */
 function scrub(value, depth = 0) {
   if (value == null || depth > 6) return value;
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return looksSecret(value) ? BLACK : value;
   if (Array.isArray(value)) return value.slice(0, 200).map((v) => scrub(v, depth + 1));
   if (typeof value !== 'object') return value;
   const out = {};
@@ -52,7 +57,10 @@ function redactView(view = {}) {
     settings: view.settings ? scrub(view.settings) : null,
     // Sichtbare Knöpfe/Labels: nur deren Beschriftung, Geheimnis-Felder als „verborgen“ markiert
     fields: Array.isArray(view.fields)
-      ? view.fields.slice(0, 100).map((f) => ({ id: String(f.id || ''), label: SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || f.secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret: Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`), isText: Boolean(f.isText), rect: inChat ? null : rectOf(f.rect) }))
+      ? view.fields.slice(0, 100).map((f) => {
+          const secret = Boolean(f.secret) || SECRET_FIELD.test(`${f.id} ${f.label || ''}`) || looksSecret(String(f.label || ''));
+          return { id: String(f.id || ''), label: secret ? '🔒 (verborgen)' : String(f.label || '').slice(0, 80), secret, isText: Boolean(f.isText), rect: inChat ? null : rectOf(f.rect) };
+        })
       : [],
     // #158: Mauszeiger als Anteil (0…1) – passt beim Helfer auf das Bild
     cursor: !inChat && view.cursor && unit(view.cursor.x) && unit(view.cursor.y) ? { x: Math.round(view.cursor.x * 1000) / 1000, y: Math.round(view.cursor.y * 1000) / 1000 } : null,
@@ -101,11 +109,71 @@ function allowHelperAction(action, { view = {}, enabled = true, controlAllowed =
   if (!controlAllowed && a.type !== 'chat') return { ok: false, reason: 'Der Nutzer hat das Mitsteuern verboten (nur Zusehen).' };
   // #160: Chat und „Einstellungen öffnen“ gehen immer – alles andere nicht im Chat-Bereich
   const anywhere = a.type === 'chat' || a.type === 'open-settings';
-  if (!anywhere && redactView(view).hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
+  // #170: gegen die GESCHWÄRZTE Ansicht prüfen – dort sind auch Felder mit Token-Inhalt oder -Beschriftung geheim
+  const safe = redactView(view);
+  if (!anywhere && safe.hidden) return { ok: false, reason: 'Im Chat-Bereich kann der Helfer nichts tun.' };
   const check = ALLOWED[a.type];
   if (!check) return { ok: false, reason: 'Diese Aktion ist nicht erlaubt.' };
   if (SECRET_FIELD.test(String(a.target || ''))) return { ok: false, reason: 'Sicherheits-Felder bedient nur der Nutzer selbst.' };
-  return check(a, view) ? { ok: true } : { ok: false, reason: 'Ziel nicht erlaubt oder nicht sichtbar.' };
+  return check(a, safe) ? { ok: true } : { ok: false, reason: 'Ziel nicht erlaubt oder nicht sichtbar.' };
 }
 
-module.exports = { redactView, allowHelperAction, scrub, SECRET_FIELD, BLACK };
+// #170: Der Nutzer kreuzt beim Zulassen an, was der Helfer darf. Ab Werk: Bild + Mitsteuern ja, Protokolle/Tests nein.
+// chats: Chat-Bereich zeigen – nur stark verpixelt (help-screen.js), ab Werk aus
+const DEFAULT_PERMS = Object.freeze({ screen: true, chats: false, control: true, logs: false, tests: false });
+function normPerms(p, base = DEFAULT_PERMS) {
+  const src = p && typeof p === 'object' ? p : {};
+  return Object.fromEntries(Object.keys(DEFAULT_PERMS).map((k) => [k, typeof src[k] === 'boolean' ? src[k] : base[k]]));
+}
+
+// Namen in „…“ (Server, Kanäle, Personen) für den Helfer schwärzen – feste Begriffe wie „Message Content Intent“ bleiben
+const KEEP_QUOTED = /^(Message Content Intent|Presence Intent|Server Members Intent|Bot|Privileged Gateway Intents|Bot einladen|Kanäle ansehen|Nachrichten senden)$/;
+const maskNames = (text) => String(text ?? '').replace(/„([^“]{0,120})“/g, (m, inner) => (KEEP_QUOTED.test(inner) ? m : `„${BLACK}“`));
+
+const LEVELS = { error: 3, warn: 2, info: 1 };
+/**
+ * #170: Protokollzeilen für den Helfer – gefiltert (Stufe, Bereich, Suchtext, Zeitraum) und nochmals geschwärzt.
+ * Zeilen-Format aus logger.js: "<ISO-Zeit> <STUFE> [<bereich>] <text>".
+ */
+// maxChars: muss auch über die Vermittler passen (eine Nachricht dort ist max. 48 KB groß)
+function redactLogLines(lines, { level = 'info', area = '', text = '', minutes = 0, max = 300, maxChars = 36000, now = Date.now() } = {}) {
+  const minLevel = LEVELS[level] || 1;
+  const areaQ = String(area || '').toLowerCase().slice(0, 40);
+  const textQ = String(text || '').toLowerCase().slice(0, 80);
+  const since = minutes > 0 ? now - minutes * 60 * 1000 : 0;
+  const out = [];
+  for (const raw of Array.isArray(lines) ? lines : []) {
+    const m = /^(\S+) (ERROR|WARN|INFO) \[([^\]]*)\] (.*)$/.exec(String(raw || ''));
+    if (!m) continue;
+    const [, at, lvl, scope, msg] = m;
+    if ((LEVELS[lvl.toLowerCase()] || 0) < minLevel) continue;
+    if (since && !(Date.parse(at) >= since)) continue;
+    if (areaQ && !scope.toLowerCase().includes(areaQ)) continue;
+    if (textQ && !`${scope} ${msg}`.toLowerCase().includes(textQ)) continue;
+    const safe = maskNames(msg)
+      .split(/\s+/)
+      .map((w) => (looksSecret(w) ? BLACK : w))
+      .join(' ');
+    out.push(`${at} ${lvl} [${scope}] ${safe}`.slice(0, 500));
+  }
+  const last = out.slice(-Math.max(1, Math.min(1000, max)));
+  let size = last.reduce((n, l) => n + l.length + 1, 0);
+  while (last.length > 1 && size > maxChars) size -= last.shift().length + 1; // älteste zuerst weglassen
+  return last;
+}
+
+/** #170: Ergebnis der Einrichtungs-Prüfung für den Helfer – ohne Server-/Bot-Namen, ohne IDs und Links. */
+function redactCheck(result) {
+  const items = Array.isArray(result?.items) ? result.items.slice(0, 20) : [];
+  return {
+    ready: Boolean(result?.ready),
+    items: items.map((i) => ({
+      ok: Boolean(i?.ok),
+      optional: Boolean(i?.optional),
+      text: maskNames(String(i?.text || '').replace(/angemeldet als .+$/, 'angemeldet')).slice(0, 200),
+      fix: i?.fix ? maskNames(String(i.fix)).slice(0, 200) : null,
+    })),
+  };
+}
+
+module.exports = { redactView, allowHelperAction, scrub, looksSecret, redactLogLines, redactCheck, normPerms, DEFAULT_PERMS, SECRET_FIELD, BLACK };

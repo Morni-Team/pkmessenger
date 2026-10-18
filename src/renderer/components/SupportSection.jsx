@@ -8,7 +8,9 @@
 // bestätigt; Beenden jederzeit (auch Strg+Umschalt+X). Über den Server laufen nur Ende-zu-Ende-verschlüsselte Pakete.
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { bus } from '../state';
 import RemoteSection from './RemoteSection.jsx';
+import { PermChecks } from './HelpRequest.jsx';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hostOf = (u) => String(u || '').replace(/^\w+:\/\//, '').replace(/\/.*$/, '');
@@ -134,6 +136,7 @@ function HelpLinkCard({ toast }) {
       .helpStatus()
       .then(setStatus)
       .catch(() => setStatus({}));
+    return bus.on((type, p) => type === 'help:status' && p && setStatus((s) => ({ ...s, ...p }))); // #170: Rechte aktuell halten
   }, []);
   useEffect(() => {
     if (!info?.expires) return undefined;
@@ -237,6 +240,12 @@ function HelpLinkCard({ toast }) {
               ■ Hilfe beenden
             </button>
           </div>
+          {status?.perms && (
+            <>
+              <span className="settings__label">Was darf der Helfer? (jederzeit änderbar)</span>
+              <PermChecks perms={status.perms} onChange={(p) => api.helpPerms(p).then(setStatus).catch(() => {})} />
+            </>
+          )}
           <HelpLiveLog />
         </>
       )}

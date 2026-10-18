@@ -49,10 +49,24 @@
       .hchat__log p { margin: 0; padding: 6px 10px; border-radius: 10px; max-width: 85%; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
       .hchat__log .in { background: var(--panel2); justify-self: start; }
       .hchat__log .out { background: rgba(45, 212, 191, 0.25); justify-self: end; }
+      .hchat__log img.snap { display: block; max-width: 100%; margin-top: 4px; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
+      .hchat__log img.snap.big { position: fixed; inset: 0; margin: auto; max-width: 96vw; max-height: 92vh; z-index: 80; cursor: zoom-out; box-shadow: 0 0 0 100vmax rgba(0,0,0,.75); }
       .hchat__row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
       .hchat__row input { flex: 1; min-width: 0; }
       .screen { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
       .hidden { display: none !important; }
+      /* #170: Eingabe-Box statt prompt() – liegt im Bild-Rahmen, damit sie auch im Vollbild erscheint */
+      .typebox { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, 92%); background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; padding: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.5); z-index: 5; }
+      .typebox.fixed { position: fixed; z-index: 70; }
+      .typebox input, .plain { text-transform: none; letter-spacing: normal; }
+      .typebox .row, .panel .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+      .panel { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+      .panel select, .panel input { width: auto; flex: 1; min-width: 110px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font: inherit; font-size: 13px; }
+      .panel pre { max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+      .diag li.ok::marker { content: '✅ '; }
+      .diag li.bad::marker { content: '❌ '; }
+      .diag li.opt::marker { content: '➖ '; }
+      #perms { font-size: 13px; }
       #cursor { position: fixed; width: 16px; height: 16px; border: 2px solid var(--accent); border-radius: 50%; pointer-events: none; transition: all 0.15s; z-index: 50; }
     </style>
   </head>
@@ -78,13 +92,27 @@
           <button id="drawmode" title="Auf das Bild zeichnen – der Nutzer sieht es in seiner App">✏️ Zeichnen</button>
           <button id="drawclear" title="Zeichnungen beim Nutzer löschen">🧽 Zeichnung löschen</button>
           <button id="fullscreen" title="Bild im Vollbild (Esc beendet)">⛶ Vollbild</button>
+          <button id="scrollup" title="Beim Nutzer nach oben scrollen (auch ohne Mausrad, z. B. am Handy)">▲ Hoch</button>
+          <button id="scrolldown" title="Beim Nutzer nach unten scrollen">▼ Runter</button>
+          <button id="logsbtn" class="hidden" title="Technisches Protokoll der App abrufen (ohne Geheimnisse)">📄 Protokoll</button>
+          <button id="diagbtn" class="hidden" title="Einrichtung prüfen: Anmeldung, Erlaubnisse, Kanäle">🩺 Prüfen</button>
         </div>
+        <p class="muted" id="perms"></p>
         <!-- #158: echtes Bild der App (Chats & Geheimnisse sind schon am PC geschwärzt). Klick = Knopf an dieser Stelle -->
         <div id="shotwrap" class="shot hidden">
           <div class="shot__inner">
             <img id="shot" alt="Bild der App (geschwärzt)" draggable="false" />
             <div id="shotcursor" class="hidden" title="Maus des Nutzers"></div>
             <svg id="shotdraw" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <!-- #170: Text für ein Feld beim Nutzer eintippen -->
+            <div id="typebox" class="typebox hidden" role="dialog" aria-label="Text eingeben">
+              <label for="typein" id="typelabel">Eingabe</label>
+              <input id="typein" class="plain" maxlength="200" autocomplete="off" />
+              <div class="row">
+                <button id="typeok" class="primary">Übernehmen</button>
+                <button id="typecancel">Abbrechen</button>
+              </div>
+            </div>
           </div>
         </div>
         <p id="shothint" class="muted"></p>
@@ -94,6 +122,26 @@
         </details>
         <p class="muted" id="control"></p>
         <p class="muted" id="via"></p>
+        <!-- #170: Protokoll (nur wenn der Nutzer es erlaubt) – gefiltert, ohne Geheimnisse/Namen -->
+        <div id="logpanel" class="panel hidden">
+          <b>📄 Protokoll</b>
+          <div class="row">
+            <select id="loglevel" aria-label="Stufe"><option value="info">alles</option><option value="warn">Warnungen + Fehler</option><option value="error">nur Fehler</option></select>
+            <select id="logminutes" aria-label="Zeitraum"><option value="15">letzte 15 Min.</option><option value="60" selected>letzte Stunde</option><option value="1440">letzter Tag</option><option value="0">alles</option></select>
+            <input id="logarea" class="plain" maxlength="40" placeholder="Bereich, z. B. discord, help, voice" />
+            <input id="logtext" class="plain" maxlength="80" placeholder="Suchtext" />
+          </div>
+          <div class="row">
+            <button id="logfetch" class="primary">Abrufen</button>
+            <button id="logcopy">Kopieren</button>
+            <button id="logsave">Herunterladen</button>
+          </div>
+          <pre id="logout" class="muted"></pre>
+        </div>
+        <div id="diagpanel" class="panel hidden">
+          <b>🩺 Einrichtung</b>
+          <ul id="diagout" class="diag"></ul>
+        </div>
       </section>
       <section class="card">
         <!-- #148: Verbindungs-Verlauf zum Kopieren (Fehlersuche) -->

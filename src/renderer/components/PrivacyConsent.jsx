@@ -23,7 +23,18 @@ export default function PrivacyConsent({ onAccept }) {
     const b = boxRef.current;
     if (b && b.scrollTop + b.clientHeight >= b.scrollHeight - 8) setReadToEnd(true);
   };
-  useEffect(check, []);
+  // #167: Wird das Fenster größer (oder die Schrift kleiner), passt der Text plötzlich ganz hinein – dann gibt es nichts
+  // mehr zu scrollen und „Akzeptieren“ blieb für immer gesperrt (App startete nicht). Darum auch bei Größenänderung prüfen.
+  useEffect(() => {
+    check();
+    window.addEventListener('resize', check);
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(check) : null;
+    if (ro && boxRef.current) ro.observe(boxRef.current);
+    return () => {
+      window.removeEventListener('resize', check);
+      ro?.disconnect();
+    };
+  }, []);
   const accept = () => {
     try {
       localStorage.setItem(KEY, JSON.stringify({ version: PRIVACY_VERSION, at: Date.now() }));
