@@ -24,8 +24,20 @@ test('Gespeicherte Werte werden geprüft (Grenzen, nur echte IDs)', () => {
 });
 
 test('Mikrofon-Optionen: Echo/Rauschen/Lautstärke-Automatik schaltbar, Mikro-Auswahl', () => {
-  assert.deepEqual(micConstraints(sanitizeVoiceFx({ echo: false, noise: true, agc: false }), 'mic1'), { echoCancellation: false, noiseSuppression: true, autoGainControl: false, voiceIsolation: true, channelCount: 1, deviceId: { ideal: 'mic1' } });
+  assert.deepEqual(micConstraints(sanitizeVoiceFx({ echo: false, noise: true, agc: false, ai: 'aus' }), 'mic1'), { echoCancellation: false, noiseSuppression: true, autoGainControl: false, voiceIsolation: true, channelCount: 1, deviceId: { ideal: 'mic1' } });
   assert.equal(micConstraints(sanitizeVoiceFx({}), '').deviceId, undefined);
+});
+
+test('#177: KI-Rauschfilter – ab Werk RNNoise, nur bekannte Modelle, ersetzt die Browser-Rauschunterdrückung', () => {
+  assert.equal(sanitizeVoiceFx({}).ai, 'rnnoise');
+  assert.equal(sanitizeVoiceFx({ ai: 'gtcrn' }).ai, 'gtcrn');
+  assert.equal(sanitizeVoiceFx({ ai: 'aus' }).ai, 'aus');
+  assert.equal(sanitizeVoiceFx({ ai: '../../evil' }).ai, 'rnnoise');
+  const withAi = micConstraints(sanitizeVoiceFx({ noise: true, ai: 'gtcrn' }), '');
+  assert.equal(withAi.noiseSuppression, false); // nicht doppelt filtern
+  assert.equal(withAi.voiceIsolation, false);
+  assert.equal(withAi.echoCancellation, true); // Echo-Unterdrückung bleibt
+  assert.equal(micConstraints(sanitizeVoiceFx({ noise: false, ai: 'aus' }), '').noiseSuppression, false);
 });
 
 test('Noise-Gate: leise = Stille, Sprechen öffnet, kurze Nachlaufzeit', () => {

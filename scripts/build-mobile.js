@@ -39,6 +39,15 @@ const envShim = {
   },
 };
 
+// #177: Sprache gibt es am Handy nicht – den KI-Rauschfilter (WASM, ~350 KB) nicht ins Android-Bündel packen
+const denoiseStub = {
+  name: 'pk-denoise-stub',
+  setup(b) {
+    b.onResolve({ filter: /^@sapphi-red\/web-noise-suppressor/ }, () => ({ path: 'denoise-stub', namespace: 'pk-stub' }));
+    b.onLoad({ filter: /.*/, namespace: 'pk-stub' }, () => ({ contents: 'export default new Uint8Array(0); export const RnnoiseWorkletNode = null; export const GtcrnWorkletNode = null;', loader: 'js' }));
+  },
+};
+
 async function main() {
   const { map, events } = readPreload();
   fs.rmSync(OUT, { recursive: true, force: true });
@@ -63,7 +72,7 @@ async function main() {
     outdir: OUT,
     format: 'iife',
     jsx: 'automatic',
-    plugins: [envShim],
+    plugins: [envShim, denoiseStub],
     define: {
       'process.env.NODE_ENV': JSON.stringify(demo ? 'development' : 'production'),
       __PK_API_MAP__: JSON.stringify(map),

@@ -37,6 +37,7 @@
     "@electron-forge/maker-squirrel": "8.0.1",
     "@electron-forge/maker-zip": "8.0.1",
     "@electron-forge/publisher-github": "8.0.1",
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
     "electron": "44.9.0",
     "esbuild": "0.28.2",
     "react": "19.3.1",

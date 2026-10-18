@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { prefs } from '../prefs';
 import { micConstraints, gateStep, gateGain, HIGHPASS_HZ, MIC_GAIN_MAX } from '../../shared/voice-settings';
 import { rms } from '../../shared/audio-frames';
+import { createDenoiser } from '../voice/denoise';
 
 // Sprachkanal-Audio (Issue #1): Filter, Audio-Test, Hilfe bei Problemen
 export default function VoiceFxSection() {
@@ -29,7 +30,7 @@ export default function VoiceFxSection() {
     stopTest();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(fx, p.micDeviceId), video: false });
-      const ctx = new AudioContext();
+      const ctx = new AudioContext({ sampleRate: 48000 }); // wie im Anruf (KI-Filter brauchen 48 kHz)
       if (typeof ctx.setSinkId === 'function') ctx.setSinkId(p.outputDeviceId || '').catch(() => {});
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -42,8 +43,16 @@ export default function VoiceFxSection() {
       hp.type = 'highpass';
       hp.frequency.value = HIGHPASS_HZ;
       src.connect(hp);
-      hp.connect(analyser);
-      hp.connect(gate).connect(delay);
+      // #177: KI-Rauschfilter wie im Anruf – der Test soll genau so klingen, wie die anderen dich hören
+      let out = hp;
+      try {
+        const dn = await createDenoiser(ctx, fx.ai);
+        if (dn) out = hp.connect(dn);
+      } catch {
+        /* ohne KI-Filter weiter */
+      }
+      out.connect(analyser);
+      out.connect(gate).connect(delay);
       const buf = new Float32Array(analyser.fftSize);
       const r = { stream, ctx, delay, raf: 0, openUntil: 0, gain: 1 };
       const tick = () => {
@@ -102,6 +111,15 @@ export default function VoiceFxSection() {
       <label className="composer__ping">
         <input type="checkbox" checked={fx.agc} onChange={(e) => set({ agc: e.target.checked })} /> Automatische Lautstärke
       </label>
+      <label className="settings__label" htmlFor="ai-select">
+        KI-Rauschfilter
+      </label>
+      <select id="ai-select" value={fx.ai || 'aus'} onChange={(e) => set({ ai: e.target.value })}>
+        <option value="rnnoise">RNNoise – filtert Rauschen, Lüfter, Tippen (sparsam)</option>
+        <option value="gtcrn">GTCRN – beste Qualität (braucht etwas mehr Rechenleistung)</option>
+        <option value="aus">Aus – nur der Filter von Windows/Chrome</option>
+      </select>
+      <p className="muted small">Läuft komplett auf deinem PC, nichts wird hochgeladen. Ist er an, ersetzt er die einfache Rauschunterdrückung oben.</p>
       <label className="settings__label" htmlFor="gate-select">
         Geräuschsperre (Noise-Gate)
       </label>
@@ -168,7 +186,7 @@ export default function VoiceFxSection() {
             <b>Du hörst dich doppelt?</b> Dann bist du wahrscheinlich zusätzlich mit deinem Discord-Account im selben Sprachkanal. Im Anruf bei deinem Namen auf „🔈 hören“ klicken → „🔇 für mich stumm“.
           </li>
           <li>
-            <b>Rauschen oder Brummen?</b> Rauschunterdrückung anlassen; Geräuschsperre zuerst auf „Normal“. Nur bei lauter Umgebung „Stark“ – und im Mikro-Test prüfen, dass deine Stimme als „● wird gesendet“ erscheint.
+            <b>Rauschen oder Brummen?</b> KI-Rauschfilter auf „RNNoise“ oder „GTCRN“ stellen; Geräuschsperre zuerst auf „Normal“. Nur bei lauter Umgebung „Stark“ – und im Mikro-Test prüfen, dass deine Stimme als „● wird gesendet“ erscheint.
           </li>
           <li>
             <b>Andere hören ein Echo?</b> Echo-Unterdrückung einschalten oder ein Headset benutzen.

@@ -15,7 +15,10 @@ const HIGHPASS_HZ = 80; // Trittschall/Brummen/Lüfter unterhalb der Stimme entf
 const SNOWFLAKE = /^\d{17,20}$/;
 
 const MIC_GAIN_MAX = 3; // #110: eigenes Mikrofon bis 300 % (andere Teilnehmer gehen bis 200 %)
-const DEFAULT_VOICE_FX = Object.freeze({ echo: true, noise: true, agc: true, gate: 'normal', micGain: 1, userMuted: {}, userVolume: {} });
+// #177: KI-Rauschfilter (läuft komplett lokal im Audio-Thread, nichts geht ins Netz):
+// rnnoise = sparsam und bewährt, gtcrn = neueres Modell (2024), filtert gründlicher, braucht etwas mehr Leistung
+const AI_FILTERS = ['aus', 'rnnoise', 'gtcrn'];
+const DEFAULT_VOICE_FX = Object.freeze({ echo: true, noise: true, agc: true, ai: 'rnnoise', gate: 'normal', micGain: 1, userMuted: {}, userVolume: {} });
 
 function sanitizeVoiceFx(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -24,6 +27,7 @@ function sanitizeVoiceFx(raw) {
     echo: typeof r.echo === 'boolean' ? r.echo : true,
     noise: typeof r.noise === 'boolean' ? r.noise : true,
     agc: typeof r.agc === 'boolean' ? r.agc : true,
+    ai: AI_FILTERS.includes(r.ai) ? r.ai : 'rnnoise',
     gate: Object.hasOwn(GATE_LEVELS, r.gate) ? r.gate : 'normal',
     micGain: Number.isFinite(r.micGain) ? Math.min(MIC_GAIN_MAX, Math.max(0, r.micGain)) : 1,
     userMuted: ids(r.userMuted, (v) => v === true),
@@ -41,7 +45,9 @@ function userGain(fx, userId) {
 function micConstraints(fx, micId) {
   // voiceIsolation (W3C mediacapture-extensions, #108): trennt die Stimme vom Hintergrund, wo der Browser es kann –
   // sonst wird die Option einfach ignoriert. Hängt an „Rauschunterdrückung“.
-  return { echoCancellation: fx.echo, noiseSuppression: fx.noise, autoGainControl: fx.agc, voiceIsolation: fx.noise, channelCount: 1, ...(micId ? { deviceId: { ideal: micId } } : {}) };
+  // #177: Ist der KI-Rauschfilter an, ersetzt er die Browser-Rauschunterdrückung – doppelt filtern klingt „unter Wasser“.
+  const browserNs = fx.noise && (fx.ai || 'aus') === 'aus';
+  return { echoCancellation: fx.echo, noiseSuppression: browserNs, autoGainControl: fx.agc, voiceIsolation: browserNs, channelCount: 1, ...(micId ? { deviceId: { ideal: micId } } : {}) };
 }
 
 /**
@@ -71,4 +77,4 @@ function gateGain(prev, open) {
   return Math.max(GATE_FLOOR, (Number.isFinite(prev) ? prev : 1) - GATE_RELEASE_STEP);
 }
 
-module.exports = { GATE_LEVELS, GATE_HOLD_MS, GATE_FLOOR, HIGHPASS_HZ, MIC_GAIN_MAX, DEFAULT_VOICE_FX, sanitizeVoiceFx, userGain, micConstraints, gateStep, gateGain, applyMicGain };
+module.exports = { GATE_LEVELS, GATE_HOLD_MS, GATE_FLOOR, HIGHPASS_HZ, MIC_GAIN_MAX, AI_FILTERS, DEFAULT_VOICE_FX, sanitizeVoiceFx, userGain, micConstraints, gateStep, gateGain, applyMicGain };
