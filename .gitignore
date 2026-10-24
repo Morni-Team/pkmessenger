@@ -21,7 +21,9 @@ CLAUDE.md
 error.md
 
 # Claude-Code-Sitzungsdateien (z. B. scheduled_tasks.lock) – nie ins öffentliche Repo
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 # Android-App (Issue #56): gebaute Web-Dateien, Gradle-Ausgaben, Signierschlüssel nie ins Repo
 mobile/www/
