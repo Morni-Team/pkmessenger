@@ -10,6 +10,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat \"$CLAUDE_PROJECT_DIR/STAND.md\" 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
