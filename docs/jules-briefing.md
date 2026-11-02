@@ -1,24 +1,35 @@
 # Weekly Briefing
 
 ## 1. Review Info
-- **Date:** Mon Oct 26 10:22:44 2026 +0100
-- **Commit:** 35d7a2e284f4119010ed7ff67eab1804e60f3b83
+- **Date:** Mon Nov 02 2026 18:55:11 GMT+0000 (Coordinated Universal Time)
+- **Commit:** d3272eab91764a26e15da99be399445fb2394b55
 
 ## 2. Top findings
-1. **Security:** (`package.json`) `electron` dependency has known vulnerabilities (e.g. GHSA-jr5w-w6x2-84p9) on version `44.9.0`.
-   - *Why it is a problem:* It leaves the application vulnerable to compromised eMudhra intermediate certificates.
-   - *How to fix:* Update `electron` to `45.0.0` in `package.json` and run `npm install` to update `package-lock.json`.
-
-2. **wrong behaviour:** (src/renderer/helpBridge.js:126) Settings modal fading check assumes the backdrop has an opacity less than 0.99. The check uses `Number(getComputedStyle(...).opacity) < 0.99`. This is usually fine, but relies on browser rendering details for timing. (Verified #164).
+1. **wrong behaviour:** (`src/renderer/helpBridge.js:141`) Settings modal fading check assumes the backdrop has an opacity less than 0.99. The check uses `Number(getComputedStyle(...).opacity) < 0.99`. This is usually fine, but relies on browser rendering details for timing. (Verified #164).
    - *Why it is a problem:* It's working currently, but could become brittle if React animations change.
-   - *How to fix:* Instead of checking opacity, rely on a react class or unmount state if possible, though the current fix works and addresses the 700ms delay leak.
+   - *How to fix:* Instead of checking opacity, rely on `getAnimations().length > 0` which more accurately checks if an animation is currently running.
 
 ## 3. Open issues
 
 - **#179** (`Sicherheitslücke beheben: electron`)
   - *Status:* done
-  - *Missing:* Nothing. The fix is included in this PR.
+  - *Missing:* Nothing.
   - *Priority:* high
+
+- **#164** (`settings opacity leak delay`)
+  - *Status:* done
+  - *Missing:* Nothing. The fix is included in this PR.
+  - *Priority:* medium
+
+- **#152** (`Pages-Seite: Direktverbindung steckt in app.js`)
+  - *Status:* done
+  - *Missing:* Nothing.
+  - *Priority:* low
+
+- **#110** (`Krypto-Miner/Cryptojacking-Dienste`)
+  - *Status:* done
+  - *Missing:* Nothing.
+  - *Priority:* low
 
 ## 4. Suggested next steps
 1. Review if other dependencies need auditing (e.g. `undici` which also showed up in audit).

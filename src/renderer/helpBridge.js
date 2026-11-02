@@ -138,7 +138,7 @@ function freshView() {
   const v = buildView();
   // Einstellungs-Fenster muss voll sichtbar sein (nicht gerade beim Ein-/Ausblenden) – sonst scheint der Chat durch
   const m = document.querySelector('.modal.settings');
-  const fading = m && (Number(getComputedStyle(m).opacity) < 0.99 || Number(getComputedStyle(m.closest('.modal-backdrop') || m).opacity) < 0.99);
+  const fading = m && (m.getAnimations().length > 0 || (m.closest('.modal-backdrop') && m.closest('.modal-backdrop').getAnimations().length > 0));
   return { ...v, allowed: fading ? null : v.allowed, at: Date.now() };
 }
 
